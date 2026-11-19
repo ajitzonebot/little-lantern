@@ -8,9 +8,21 @@ import android.content.Intent
 import android.content.IntentFilter
 import org.littlelantern.MainActivity
 
+enum class LockState {
+    /** Child can swipe out. */
+    NONE,
+
+    /** App pinning: gestures blocked, leaving needs the phone PIN. Ends on restart. */
+    PINNED,
+
+    /** Device owner lock task: blocks everything, survives restarts. */
+    FULL,
+}
+
 /**
- * Wraps the device-owner APIs that keep the child inside Little Lantern.
- * Every call is a no-op when the app is not device owner, so the app still runs (unlocked) for development.
+ * Keeps the child inside Little Lantern.
+ * Normal phone: Android App pinning (startLockTask without device owner).
+ * Spare phone set up as device owner: full lock task mode.
  */
 class LockController(private val context: Context) {
 
@@ -20,15 +32,12 @@ class LockController(private val context: Context) {
     val isDeviceOwner: Boolean
         get() = dpm.isDeviceOwnerApp(context.packageName)
 
-    /** Allows only this app plus the parent-approved game apps to run in lock task mode. */
-    fun configure(allowedGamePackages: Set<String>) {
+    /** Device owner only: allow just this app, hide system UI, make it the home screen. */
+    fun configure() {
         if (!isDeviceOwner) return
-        val packages = (allowedGamePackages + context.packageName).toTypedArray()
-        dpm.setLockTaskPackages(admin, packages)
-        // No home, recents, notifications, status bar info or power menu while locked.
+        dpm.setLockTaskPackages(admin, arrayOf(context.packageName))
         dpm.setLockTaskFeatures(admin, DevicePolicyManager.LOCK_TASK_FEATURE_NONE)
         dpm.setStatusBarDisabled(admin, true)
-        // Make Little Lantern the permanent home screen so a reboot lands here.
         val home = IntentFilter(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_HOME)
             addCategory(Intent.CATEGORY_DEFAULT)
@@ -36,12 +45,18 @@ class LockController(private val context: Context) {
         dpm.addPersistentPreferredActivity(admin, home, ComponentName(context, MainActivity::class.java))
     }
 
-    fun isLocked(): Boolean {
+    fun state(): LockState {
         val am = context.getSystemService(ActivityManager::class.java)
-        return am.lockTaskModeState != ActivityManager.LOCK_TASK_MODE_NONE
+        return when (am.lockTaskModeState) {
+            ActivityManager.LOCK_TASK_MODE_LOCKED -> LockState.FULL
+            ActivityManager.LOCK_TASK_MODE_PINNED -> LockState.PINNED
+            else -> LockState.NONE
+        }
     }
 
-    /** Undoes everything so the app can be uninstalled. Parent mode only. */
+    fun isLocked(): Boolean = state() != LockState.NONE
+
+    /** Undoes the device owner setup so the app can be uninstalled. Parent mode only. */
     fun releaseDeviceOwner() {
         if (!isDeviceOwner) return
         dpm.setStatusBarDisabled(admin, false)

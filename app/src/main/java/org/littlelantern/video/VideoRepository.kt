@@ -1,8 +1,6 @@
 package org.littlelantern.video
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.media.MediaMetadataRetriever
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -10,33 +8,33 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.littlelantern.check.KidCheck
 import org.littlelantern.check.Metrics
 import org.littlelantern.check.VideoAnalyzer
 import org.littlelantern.net.OkHttpDownloader
-import org.littlelantern.net.downloadInChunks
+import org.littlelantern.net.USER_AGENT
 import org.schabi.newpipe.extractor.NewPipe
 import java.util.concurrent.TimeUnit
 
 /**
- * Adds videos by link: resolve with NewPipeExtractor, download, run the kid check, then wait for the parent.
- * One video is processed at a time. Network is used only here, only when the parent adds links.
+ * Adds videos by link: read the link with NewPipeExtractor, stream short samples to run the kid check,
+ * then wait for the parent. Videos are never downloaded; they stream when played.
  */
 class VideoRepository(context: Context) {
 
     val library = VideoLibrary(context)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val client = OkHttpClient.Builder()
-        .readTimeout(30, TimeUnit.SECONDS)
-        .build()
+    private val client = OkHttpClient.Builder().readTimeout(30, TimeUnit.SECONDS).build()
     private val queue = Channel<String>(Channel.UNLIMITED)
 
     private val _videos = MutableStateFlow(library.list())
     val videos: StateFlow<List<VideoEntry>> = _videos
 
-    /** Live progress text per video id, e.g. "Downloading 40%". */
+    /** Live progress text per video id, e.g. "Checking samples 40%". */
     private val _progress = MutableStateFlow<Map<String, String>>(emptyMap())
     val progress: StateFlow<Map<String, String>> = _progress
 
@@ -46,9 +44,8 @@ class VideoRepository(context: Context) {
     init {
         NewPipe.init(OkHttpDownloader(client))
         scope.launch { for (id in queue) process(id) }
-        // Resume anything interrupted by an app restart.
         library.list()
-            .filter { it.status in setOf(VideoStatus.QUEUED, VideoStatus.DOWNLOADING, VideoStatus.CHECKING) }
+            .filter { it.status == VideoStatus.QUEUED || it.status == VideoStatus.CHECKING }
             .forEach { queue.trySend(it.id) }
     }
 
@@ -76,6 +73,11 @@ class VideoRepository(context: Context) {
         }
     }
 
+    /** Fresh stream links for playback (they expire, so resolve at play time). */
+    suspend fun resolveForPlayback(entry: VideoEntry): ResolvedVideo = withContext(Dispatchers.IO) {
+        YouTubeSource.resolve(entry.url)
+    }
+
     fun approve(id: String) = change(id) { it.copy(status = VideoStatus.APPROVED) }
 
     fun reject(id: String) {
@@ -100,32 +102,18 @@ class VideoRepository(context: Context) {
         val entry = library.list().firstOrNull { it.id == id } ?: return
         try {
             setProgress(id, "Reading link")
-            change(id) { it.copy(status = VideoStatus.DOWNLOADING, error = null) }
+            change(id) { it.copy(status = VideoStatus.CHECKING, error = null) }
             val resolved = YouTubeSource.resolve(entry.url)
-            if (resolved.durationMs > MAX_DURATION_MS) {
-                change(id) {
-                    it.copy(title = resolved.title, channel = resolved.channel, durationMs = resolved.durationMs,
-                        status = VideoStatus.FAILED, error = "Longer than 30 minutes, not downloaded.")
-                }
-                return
-            }
             change(id) { it.copy(title = resolved.title, channel = resolved.channel, durationMs = resolved.durationMs) }
+            resolved.thumbnailUrl?.let { saveThumbnail(id, it) }
 
-            downloadInChunks(client, resolved.videoUrl, library.videoFile(id)) { p ->
-                setProgress(id, if (p < 0) "Downloading video" else "Downloading video ${(p * 100).toInt()}%")
-            }
-            resolved.audioUrl?.let { audioUrl ->
-                downloadInChunks(client, audioUrl, library.audioFile(id)) { p ->
-                    setProgress(id, if (p < 0) "Downloading sound" else "Downloading sound ${(p * 100).toInt()}%")
-                }
-            }
-            saveThumbnail(id)
+            val measured = VideoAnalyzer.analyze(
+                videoUrl = resolved.videoUrl,
+                audioUrl = resolved.audioUrl,
+                durationMs = resolved.durationMs,
+                headers = mapOf("User-Agent" to USER_AGENT),
+            ) { p -> setProgress(id, "Checking samples ${(p * 100).toInt()}%") }
 
-            change(id) { it.copy(status = VideoStatus.CHECKING, hasSeparateAudio = resolved.audioUrl != null) }
-            val audio = if (resolved.audioUrl != null) library.audioFile(id) else library.videoFile(id)
-            val measured = VideoAnalyzer.analyze(library.videoFile(id), audio) { p ->
-                setProgress(id, "Checking ${(p * 100).toInt()}%")
-            }
             val metrics = Metrics(
                 cutsPerMinute = measured.cutsPerMinute,
                 flashesPerMinute = measured.flashesPerMinute,
@@ -143,18 +131,16 @@ class VideoRepository(context: Context) {
         }
     }
 
-    private fun saveThumbnail(id: String) {
-        val r = MediaMetadataRetriever()
-        try {
-            r.setDataSource(library.videoFile(id).path)
-            val durationMs = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-            val frame = r.getFrameAtTime(durationMs * 1000 / 3, MediaMetadataRetriever.OPTION_CLOSEST_SYNC) ?: return
-            library.thumbFile(id).outputStream().use { frame.compress(Bitmap.CompressFormat.JPEG, 80, it) }
-            frame.recycle()
-        } catch (_: RuntimeException) {
-            // No thumbnail; the picker shows a plain tile.
-        } finally {
-            r.release()
+    /** A small picture for the picker (a few KB), not the video. */
+    private fun saveThumbnail(id: String, url: String) {
+        runCatching {
+            val request = Request.Builder().url(url).header("User-Agent", USER_AGENT).build()
+            client.newCall(request).execute().use { response ->
+                val bytes = response.body?.bytes()
+                if (response.isSuccessful && bytes != null && bytes.size < 1_000_000) {
+                    library.thumbFile(id).writeBytes(bytes)
+                }
+            }
         }
     }
 
@@ -172,9 +158,7 @@ class VideoRepository(context: Context) {
     }
 
     companion object {
-        private const val MAX_DURATION_MS = 30 * 60_000L
-
-        /** Pulls the first http(s) link out of shared text such as "Watch this: https://youtu.be/...". */
+        /** Pulls the first YouTube link out of shared text such as "Watch this: https://youtu.be/...". */
         fun extractUrl(text: String): String? =
             Regex("https?://\\S+").find(text)?.value
                 ?.takeIf { it.contains("youtube.com") || it.contains("youtu.be") }

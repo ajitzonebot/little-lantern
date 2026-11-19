@@ -1,70 +1,73 @@
 package org.littlelantern.ui
 
-import android.graphics.drawable.Drawable
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.ColorMatrix
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.drawable.toBitmap
-import org.littlelantern.data.AppEntry
+import androidx.compose.ui.unit.sp
+import org.littlelantern.ui.games.GameKind
 
-/** Desaturated icons: calm visuals by default. */
-private val calmIconFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0.5f) })
-
+/** Child home: Videos plus the four in-app games. Nothing here opens another app. */
 @Composable
-fun ChildHome(games: List<AppEntry>, hasVideos: Boolean, onOpenVideos: () -> Unit, onOpenGame: (String) -> Unit) {
+fun ChildHome(hasVideos: Boolean, onOpenVideos: () -> Unit, onOpenGame: (GameKind) -> Unit) {
     Column(
-        Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(24.dp),
+        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        Text(
-            "Little Lantern",
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        Spacer(Modifier.height(24.dp))
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(150.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+        Text("Little Lantern", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onBackground)
+        Column(
+            Modifier.fillMaxWidth().height(140.dp).clip(RoundedCornerShape(24.dp))
+                .background(Color(0xFFDDE3DA))
+                .clickable(enabled = hasVideos, onClick = onOpenVideos),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
         ) {
-            item(key = "videos") {
-                Tile(
-                    label = "Videos",
-                    subtitle = if (hasVideos) null else "Ask a grown-up to add some",
-                    icon = null,
-                    enabled = hasVideos,
-                    onClick = onOpenVideos,
-                )
+            Canvas(Modifier.size(52.dp)) {
+                val s = size.minDimension
+                drawRoundRect(Color(0xFF4A584C), topLeft = Offset(s * 0.1f, s * 0.2f), size = androidx.compose.ui.geometry.Size(s * 0.8f, s * 0.6f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(s * 0.12f), style = Stroke(s * 0.06f))
+                val tri = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(s * 0.42f, s * 0.38f); lineTo(s * 0.62f, s * 0.5f); lineTo(s * 0.42f, s * 0.62f); close()
+                }
+                drawPath(tri, Color(0xFF4A584C))
             }
-            items(games, key = { it.packageName }) { app ->
-                Tile(label = app.label, subtitle = null, icon = app.icon, enabled = true) {
-                    onOpenGame(app.packageName)
+            Text("Videos", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (hasVideos) 1f else 0.4f))
+            if (!hasVideos) Text("Ask a grown-up to add some", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+        }
+        GameKind.entries.chunked(2).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                row.forEach { game ->
+                    Column(
+                        Modifier.weight(1f).height(150.dp).clip(RoundedCornerShape(24.dp))
+                            .background(MaterialTheme.colorScheme.surface)
+                            .clickable { onOpenGame(game) },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        GameIcon(game)
+                        Spacer(Modifier.height(10.dp))
+                        Text(game.title, fontSize = 18.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                    }
                 }
             }
         }
@@ -72,37 +75,36 @@ fun ChildHome(games: List<AppEntry>, hasVideos: Boolean, onOpenVideos: () -> Uni
 }
 
 @Composable
-private fun Tile(
-    label: String,
-    subtitle: String?,
-    icon: Drawable?,
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
-    val textColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else 0.4f)
-    Column(
-        Modifier
-            .aspectRatio(1f)
-            .clip(RoundedCornerShape(20.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        if (icon != null) {
-            val bitmap = remember(icon) { icon.toBitmap(128, 128).asImageBitmap() }
-            Image(
-                bitmap = bitmap,
-                contentDescription = null,
-                colorFilter = calmIconFilter,
-                modifier = Modifier.size(72.dp),
-            )
-            Spacer(Modifier.height(12.dp))
-        }
-        Text(label, style = MaterialTheme.typography.titleMedium, color = textColor, textAlign = TextAlign.Center, maxLines = 2)
-        if (subtitle != null) {
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = textColor)
+private fun GameIcon(game: GameKind) {
+    val brown = Color(0xFF8A6F4E)
+    val blue = Color(0xFF6E7A8A)
+    Canvas(Modifier.size(48.dp)) {
+        val s = size.minDimension
+        val line = Stroke(s * 0.05f)
+        when (game) {
+            GameKind.COUNT -> {
+                drawCircle(brown, s * 0.1f, Offset(s * 0.3f, s * 0.33f), style = line)
+                drawCircle(brown, s * 0.1f, Offset(s * 0.7f, s * 0.33f), style = line)
+                drawCircle(brown, s * 0.1f, Offset(s * 0.5f, s * 0.67f), style = line)
+            }
+            GameKind.SHAPES -> {
+                drawCircle(blue, s * 0.16f, Offset(s * 0.3f, s * 0.3f), style = line)
+                drawRect(blue, Offset(s * 0.56f, s * 0.14f), androidx.compose.ui.geometry.Size(s * 0.3f, s * 0.3f), style = line)
+                val t = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(s * 0.5f, s * 0.55f); lineTo(s * 0.72f, s * 0.9f); lineTo(s * 0.28f, s * 0.9f); close()
+                }
+                drawPath(t, blue, style = line)
+            }
+            GameKind.PAIRS -> {
+                drawRoundRect(brown, Offset(s * 0.1f, s * 0.12f), androidx.compose.ui.geometry.Size(s * 0.36f, s * 0.46f), androidx.compose.ui.geometry.CornerRadius(s * 0.06f), style = line)
+                drawRoundRect(brown, Offset(s * 0.54f, s * 0.42f), androidx.compose.ui.geometry.Size(s * 0.36f, s * 0.46f), androidx.compose.ui.geometry.CornerRadius(s * 0.06f), style = line)
+            }
+            GameKind.PAINT -> {
+                val p = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(s * 0.15f, s * 0.8f); quadraticBezierTo(s * 0.35f, s * 0.4f, s * 0.55f, s * 0.6f); quadraticBezierTo(s * 0.75f, s * 0.8f, s * 0.88f, s * 0.2f)
+                }
+                drawPath(p, blue, style = Stroke(s * 0.08f, cap = androidx.compose.ui.graphics.StrokeCap.Round))
+            }
         }
     }
 }

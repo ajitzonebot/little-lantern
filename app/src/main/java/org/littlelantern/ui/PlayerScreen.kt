@@ -31,35 +31,38 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
-import java.io.File
+import org.littlelantern.net.USER_AGENT
 
 /**
- * Full-screen calm playback: no controls, no seeking, no autoplay, reduced colour and volume.
- * [onFinished] fires once, when the video reaches its natural end.
+ * Full-screen calm playback, streamed (nothing saved): no controls, no seeking, no autoplay,
+ * reduced colour and volume. [onFinished] fires once, at the natural end; [onError] if it cannot play.
  */
 @OptIn(UnstableApi::class)
 @Composable
 fun PlayerScreen(
-    videoFile: File,
-    audioFile: File?,
+    videoUrl: String,
+    audioUrl: String?,
     fallbackDurationMs: Long,
     saturation: Float,
     volume: Float,
     onFinished: (watchedMs: Long) -> Unit,
+    onError: () -> Unit,
 ) {
     val context = LocalContext.current
     val finished by rememberUpdatedState(onFinished)
+    val failed by rememberUpdatedState(onError)
     var aspect by remember { mutableFloatStateOf(16f / 9f) }
 
-    val player = remember(videoFile) {
-        val factory = ProgressiveMediaSource.Factory(DefaultDataSource.Factory(context))
-        val video = factory.createMediaSource(MediaItem.fromUri(Uri.fromFile(videoFile)))
-        val source = if (audioFile != null) {
-            MergingMediaSource(video, factory.createMediaSource(MediaItem.fromUri(Uri.fromFile(audioFile))))
+    val player = remember(videoUrl) {
+        val http = DefaultHttpDataSource.Factory().setUserAgent(USER_AGENT).setAllowCrossProtocolRedirects(true)
+        val factory = ProgressiveMediaSource.Factory(http)
+        val video = factory.createMediaSource(MediaItem.fromUri(Uri.parse(videoUrl)))
+        val source = if (audioUrl != null) {
+            MergingMediaSource(video, factory.createMediaSource(MediaItem.fromUri(Uri.parse(audioUrl))))
         } else {
             video
         }
@@ -80,6 +83,13 @@ fun PlayerScreen(
                     done = true
                     val duration = player.duration.takeIf { it > 0 } ?: fallbackDurationMs
                     finished(duration)
+                }
+            }
+
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                if (!done) {
+                    done = true
+                    failed()
                 }
             }
 

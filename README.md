@@ -2,7 +2,7 @@
 
 A calm, locked-down player for toddlers on Android. Parent-approved slow videos and simple open-source games, with no ads, no autoplay, no feed, and sessions that end on their own.
 
-> Status: **Phase 2 (calm video player + kid check)**. See the [roadmap](docs/SPEC.md#roadmap).
+> Status: **v0.3: streaming only, App pinning lock, in-app games**. See the [roadmap](docs/SPEC.md#roadmap).
 
 ## Why
 
@@ -27,8 +27,8 @@ Parent mode returns to Child mode after 2 minutes without a touch.
 ## Videos: links and playlists only
 
 1. In Parent mode, open **Videos** and paste a YouTube video or playlist link (or use **Share > Little Lantern** in the YouTube app).
-2. The app fetches the video with [NewPipeExtractor](https://github.com/teamnewpipe/newpipeextractor): direct streams, no ads, no recommendations. It downloads a small copy (at most 480p) so playback is offline. Playlists add up to 50 videos.
-3. **Kid check**, measured on the phone:
+2. The app reads the link with [NewPipeExtractor](https://github.com/teamnewpipe/newpipeextractor): direct streams, no ads, no recommendations. **Nothing is downloaded**: videos stream when played (Wi-Fi needed). Playlists add up to 50 videos.
+3. **Kid check**, measured on the phone from 6 samples of 20 seconds streamed from across the whole video (kept in memory, then dropped):
 
 | Check | What is measured | Why (see docs/SPEC.md) |
 | --- | --- | --- |
@@ -44,7 +44,7 @@ Result: **Calm**, **Check before approving** or **Not recommended**. Thresholds 
 ## Calm playback
 
 - One video at a time. No controls, no seeking, no autoplay, no queue.
-- Colour reduced to 60% and volume capped at 60%.
+- Colour reduced to 60% and volume capped at 60%. Streams at up to 480p.
 - After each video, a still pause screen; "One more" or "All done" appear after 30 seconds.
 - Sessions end only when a video finishes, never mid-video, then the same closing screen every time and a rest period.
 - Defaults: 60 min a day, 15 min sessions, 60 min rest. The parent can change them.
@@ -59,7 +59,6 @@ Every screen has a small **Feedback** button (top right). Notes are saved on the
 - Runs as **device owner** in **Lock Task Mode**: no home, recents, notifications or other apps.
 - Registers as the **home screen**, so a reboot lands back in Little Lantern.
 - **Parent gate**: volume x5 + BiometricPrompt; salted PBKDF2 PIN fallback; 5 wrong PINs returns to Child mode.
-- **Allowlisted games**: the parent picks which installed apps the child may open; only those can run inside the lock.
 - Muted colours and desaturated icons by default.
 
 ## Setup
@@ -68,19 +67,14 @@ You need a **spare Android device (Android 9+) with no Google account added**. D
 
 **Download the app:** https://github.com/ajitzonebot/little-lantern/releases/download/latest/little-lantern.apk (rebuilt on every push).
 
-## Suggested open-source games
+## In-app games
 
-Install from F-Droid, test each one yourself, then allow it in Parent mode.
+Count, Shapes, Pairs and Paint are built into the app; no other app ever opens. No timers, scores, stars, rewards or wrong-answer sounds. Each game ends on its own after a few rounds, shows a question for the grown-up, and its time counts toward the daily limit.
 
-| App | Type | License |
-| --- | --- | --- |
-| [12345 - Learn Counting](https://f-droid.org/en/packages/eu.quelltext.counting/) | Counting pictures | AGPL |
-| [BabbyPaint](https://f-droid.org/en/packages/dev.alexjyong.babbypaint/) | Simple painting | GPL-3.0 |
-| [KidOrb](https://f-droid.org/en/packages/com.wian.kidorb/) | Calm colour painting | GPL-3.0 |
-| [Tux Paint](https://f-droid.org/packages/org.tuxpaint/) | Drawing, ages 3 to 12 | GPL-2.0+ |
-| [GCompris](https://apps.kde.org/gcompris/) | 100+ activities, ages 2 to 10 | AGPL-3.0 |
+## Child lock
 
-Check before allowing: no ads, no links to a browser or store, no rewards or timers, no settings the child can reach.
+- **App pinning (any phone):** turn on Android's App pinning with "Ask for PIN before unpinning". Little Lantern pins itself in Child mode; home, back and swipe gestures are blocked and leaving needs the phone PIN. A restart ends pinning; the app pins again when opened. Parent mode shows red until a lock is active.
+- **Full lock (spare phone):** device owner via adb, see [docs/SETUP.md](docs/SETUP.md).
 
 ## Building locally
 

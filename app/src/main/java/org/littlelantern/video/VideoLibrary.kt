@@ -7,8 +7,9 @@ import org.littlelantern.check.Metrics
 import java.io.File
 import java.util.UUID
 
-enum class VideoStatus { QUEUED, DOWNLOADING, CHECKING, REVIEW, APPROVED, FAILED }
+enum class VideoStatus { QUEUED, CHECKING, REVIEW, APPROVED, FAILED }
 
+/** A video the parent added by link. Only the link, the check result and a small thumbnail are kept. */
 data class VideoEntry(
     val id: String,
     val url: String,
@@ -18,21 +19,19 @@ data class VideoEntry(
     val status: VideoStatus = VideoStatus.QUEUED,
     val error: String? = null,
     val metrics: Metrics? = null,
-    val hasSeparateAudio: Boolean = false,
 )
 
-/**
- * Videos added by link, stored offline in app-private storage:
- * media/<id>.video, media/<id>.audio, thumbs/<id>.jpg and library.json.
- */
+/** library.json plus thumbs/<id>.jpg. Videos themselves are never stored; they stream when played. */
 class VideoLibrary(context: Context) {
 
-    private val mediaDir = File(context.filesDir, "media").apply { mkdirs() }
     private val thumbDir = File(context.filesDir, "thumbs").apply { mkdirs() }
     private val index = File(context.filesDir, "library.json")
 
-    fun videoFile(id: String) = File(mediaDir, "$id.video")
-    fun audioFile(id: String) = File(mediaDir, "$id.audio")
+    init {
+        // v0.2 downloaded videos; remove any left over.
+        File(context.filesDir, "media").deleteRecursively()
+    }
+
     fun thumbFile(id: String) = File(thumbDir, "$id.jpg")
 
     @Synchronized
@@ -56,8 +55,6 @@ class VideoLibrary(context: Context) {
 
     @Synchronized
     fun remove(id: String) {
-        videoFile(id).delete()
-        audioFile(id).delete()
         thumbFile(id).delete()
         save(list().filter { it.id != id })
     }
@@ -79,7 +76,6 @@ class VideoLibrary(context: Context) {
         put("durationMs", e.durationMs)
         put("status", e.status.name)
         put("error", e.error ?: JSONObject.NULL)
-        put("hasSeparateAudio", e.hasSeparateAudio)
         e.metrics?.let { m ->
             put(
                 "metrics",
@@ -109,18 +105,21 @@ class VideoLibrary(context: Context) {
                 parentMarkedFantastical = j.optBoolean("parentFantastical"),
             )
         }
+        val status = when (val raw = o.optString("status")) {
+            "DOWNLOADING" -> VideoStatus.QUEUED // v0.2 state: check again by streaming
+            else -> runCatching { VideoStatus.valueOf(raw) }.getOrDefault(VideoStatus.FAILED)
+        }
         return VideoEntry(
             id = o.getString("id"),
             url = o.getString("url"),
             title = o.optString("title"),
             channel = o.optString("channel"),
             durationMs = o.optLong("durationMs"),
-            status = runCatching { VideoStatus.valueOf(o.getString("status")) }.getOrDefault(VideoStatus.FAILED),
+            status = status,
             error = if (o.isNull("error")) null else o.optString("error"),
             metrics = m,
-            hasSeparateAudio = o.optBoolean("hasSeparateAudio"),
         )
     }
 
-    private fun JSONObject.optDoubleOrNull(key: String): Double? = if (isNull(key) || !has(key)) null else optDouble(key)
+    private fun JSONObject.optDoubleOrNull(key: String): Double? = if (!has(key) || isNull(key)) null else optDouble(key)
 }

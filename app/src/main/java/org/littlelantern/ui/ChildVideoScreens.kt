@@ -162,3 +162,16 @@ private fun LanternMessage(title: String, body: String) {
         Text(body, color = Color(0xFFD6D0C3), fontSize = 20.sp, textAlign = TextAlign.Center)
     }
 }
+
+/** Calm still screen while the video's stream is found. */
+@Composable
+fun LoadingScreen() {
+    Column(
+        Modifier.fillMaxSize().background(Color(0xFFECE8DF)).padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+    ) {
+        Box(Modifier.size(120.dp).clip(CircleShape).background(Color(0xFFDDE3DA)))
+        Text("Getting ready", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
+    }
+}

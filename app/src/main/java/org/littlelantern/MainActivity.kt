@@ -2,9 +2,11 @@ package org.littlelantern
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import android.provider.Settings
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.widget.Toast
@@ -22,13 +24,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.littlelantern.data.Prefs
-import org.littlelantern.data.installedLaunchableApps
 import org.littlelantern.feedback.Feedback
 import org.littlelantern.feedback.FeedbackFormat
 import org.littlelantern.feedback.FeedbackKind
 import org.littlelantern.gate.ParentGate
 import org.littlelantern.gate.PressSequenceDetector
 import org.littlelantern.lock.LockController
+import org.littlelantern.lock.LockState
 import org.littlelantern.session.AfterVideo
 import org.littlelantern.session.SessionRules
 import org.littlelantern.ui.ChildHome
@@ -46,6 +48,11 @@ import org.littlelantern.ui.PinSetupScreen
 import org.littlelantern.ui.PlayerScreen
 import org.littlelantern.ui.RestingScreen
 import org.littlelantern.ui.VideoPicker
+import org.littlelantern.ui.games.GameDoneScreen
+import org.littlelantern.ui.games.GameKind
+import org.littlelantern.ui.games.GameScreen
+import org.littlelantern.ui.LoadingScreen
+import org.littlelantern.video.ResolvedVideo
 import org.littlelantern.video.VideoEntry
 import org.littlelantern.video.VideoStatus
 import java.time.LocalDate
@@ -56,8 +63,11 @@ enum class Mode { SETUP, CHILD, PIN, PARENT, PARENT_VIDEOS, PARENT_FEEDBACK }
 sealed interface ChildScreen {
     data object Home : ChildScreen
     data object Picker : ChildScreen
-    data class Playing(val video: VideoEntry) : ChildScreen
+    data class Loading(val video: VideoEntry) : ChildScreen
+    data class Playing(val video: VideoEntry, val streams: ResolvedVideo) : ChildScreen
     data class Paused(val video: VideoEntry) : ChildScreen
+    data class Game(val kind: GameKind, val startedAt: Long) : ChildScreen
+    data class GameDone(val kind: GameKind) : ChildScreen
     data object Closing : ChildScreen
     data object Resting : ChildScreen
 }
@@ -78,8 +88,7 @@ class MainActivity : FragmentActivity() {
 
     private var mode by mutableStateOf(Mode.CHILD)
     private var child by mutableStateOf<ChildScreen>(ChildScreen.Home)
-    private var allowedGames by mutableStateOf(emptySet<String>())
-    private var isLocked by mutableStateOf(false)
+    private var lockState by mutableStateOf(LockState.NONE)
     /** Bumped whenever parent settings or usage change, so parent screens re-read them. */
     private var settingsVersion by mutableIntStateOf(0)
     private var feedbackItems by mutableStateOf(emptyList<Feedback>())
@@ -95,10 +104,9 @@ class MainActivity : FragmentActivity() {
         lock = LockController(this)
         gate = ParentGate(this, onUnlocked = ::enterParentMode, onNeedPin = { mode = Mode.PIN })
 
-        allowedGames = prefs.allowedGames
         showFeedback = prefs.showFeedbackButton
         feedbackItems = app.feedback.list()
-        lock.configure(allowedGames)
+        lock.configure()
         mode = if (prefs.hasPin) Mode.CHILD else Mode.SETUP
         child = if (isResting()) ChildScreen.Resting else ChildScreen.Home
 
@@ -130,11 +138,10 @@ class MainActivity : FragmentActivity() {
                     )
 
                     Mode.PARENT -> {
-                        val apps = remember { installedLaunchableApps(this@MainActivity) }
-                        val status = remember(settingsVersion, videos, isLocked) {
+                        val status = remember(settingsVersion, videos, lockState) {
                             ParentStatus(
                                 isDeviceOwner = lock.isDeviceOwner,
-                                isLocked = isLocked,
+                                lock = lockState,
                                 todayMinutes = (prefs.todayWatchedMs / 60_000).toInt(),
                                 dailyLimitMin = prefs.dailyLimitMin,
                                 sessionMin = prefs.sessionMin,
@@ -148,9 +155,7 @@ class MainActivity : FragmentActivity() {
                         }
                         ParentHome(
                             status = status,
-                            apps = apps,
-                            allowedGames = allowedGames,
-                            onToggleGame = ::setGameAllowed,
+                            onOpenLockSettings = ::openLockSettings,
                             onOpenVideos = { mode = Mode.PARENT_VIDEOS },
                             onOpenFeedback = { feedbackMessage = null; mode = Mode.PARENT_FEEDBACK },
                             onCycleDailyLimit = { prefs.dailyLimitMin = next(prefs.dailyLimitMin, listOf(30, 45, 60, 90)); settingsVersion++ },
@@ -216,7 +221,10 @@ class MainActivity : FragmentActivity() {
         Mode.CHILD -> "Child: " + when (child) {
             ChildScreen.Home -> "Home"
             ChildScreen.Picker -> "Video picker"
+            is ChildScreen.Loading -> "Video loading"
             is ChildScreen.Playing -> "Video playing"
+            is ChildScreen.Game -> "Game: " + (child as ChildScreen.Game).kind.title
+            is ChildScreen.GameDone -> "Game done"
             is ChildScreen.Paused -> "Pause"
             ChildScreen.Closing -> "Closing"
             ChildScreen.Resting -> "Resting"
@@ -279,36 +287,41 @@ class MainActivity : FragmentActivity() {
     private fun ChildFlow(approved: List<VideoEntry>) {
         val settings = prefs.sessionSettings()
         when (val screen = child) {
-            ChildScreen.Home -> {
-                val games = remember(allowedGames) {
-                    installedLaunchableApps(this).filter { it.packageName in allowedGames }
-                }
-                ChildHome(
-                    games = games,
-                    hasVideos = approved.isNotEmpty(),
-                    onOpenVideos = ::startVideoSession,
-                    onOpenGame = ::launchGame,
-                )
-            }
+            ChildScreen.Home -> ChildHome(
+                hasVideos = approved.isNotEmpty(),
+                onOpenVideos = ::startVideoSession,
+                onOpenGame = ::startGame,
+            )
 
             ChildScreen.Picker -> {
                 val weekIndex = LocalDate.now().toEpochDay() / 7
                 val choices = SessionRules.choicesForWeek(approved, settings.choices, weekIndex)
                 VideoPicker(
                     items = choices.map { PickerItem(it.id, it.title, repo.library.thumbFile(it.id)) },
-                    onPick = { id -> approved.firstOrNull { it.id == id }?.let { child = ChildScreen.Playing(it) } },
+                    onPick = { id -> approved.firstOrNull { it.id == id }?.let(::loadVideo) },
                     onBack = { child = ChildScreen.Home },
                 )
             }
 
+            is ChildScreen.Loading -> LoadingScreen()
+
             is ChildScreen.Playing -> PlayerScreen(
-                videoFile = repo.library.videoFile(screen.video.id),
-                audioFile = if (screen.video.hasSeparateAudio) repo.library.audioFile(screen.video.id) else null,
+                videoUrl = screen.streams.videoUrl,
+                audioUrl = screen.streams.audioUrl,
                 fallbackDurationMs = screen.video.durationMs,
                 saturation = settings.saturation,
                 volume = settings.volume,
                 onFinished = { watched -> onVideoFinished(screen.video, watched) },
+                onError = ::onPlaybackError,
             )
+
+            is ChildScreen.Game -> GameScreen(
+                kind = screen.kind,
+                onFinished = { endGame(screen, done = true) },
+                onBack = { endGame(screen, done = false) },
+            )
+
+            is ChildScreen.GameDone -> GameDoneScreen(screen.kind, onHome = ::goHomeOrRest)
 
             is ChildScreen.Paused -> PauseScreen(
                 thumb = repo.library.thumbFile(screen.video.id),
@@ -332,7 +345,7 @@ class MainActivity : FragmentActivity() {
     override fun onResume() {
         super.onResume()
         if (mode == Mode.CHILD) startLockIfPossible()
-        isLocked = lock.isLocked()
+        lockState = lock.state()
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -396,45 +409,82 @@ class MainActivity : FragmentActivity() {
         mode = Mode.CHILD
         if (child == ChildScreen.Resting && !isResting()) child = ChildScreen.Home
         startLockIfPossible()
-        isLocked = lock.isLocked()
+        lockState = lock.state()
     }
 
     private fun enterParentMode() {
         lastInteraction = SystemClock.uptimeMillis()
-        isLocked = lock.isLocked()
+        lockState = lock.state()
         settingsVersion++
         mode = Mode.PARENT
     }
 
+    /**
+     * Device owner: full lock. Otherwise Android App pinning (the phone may ask to confirm).
+     * Re-applied every time Child mode is shown, so after a restart the app pins itself again.
+     */
     private fun startLockIfPossible() {
-        if (lock.isDeviceOwner && !lock.isLocked()) startLockTask()
+        if (!lock.isLocked()) runCatching { startLockTask() }
     }
 
-    private fun launchGame(packageName: String) {
+    private fun openLockSettings() {
+        if (lock.isLocked()) runCatching { stopLockTask() }
+        lockState = lock.state()
+        runCatching { startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS)) }
+            .onFailure { runCatching { startActivity(Intent(Settings.ACTION_SETTINGS)) } }
+    }
+
+    // --- Games ---
+
+    private fun startGame(kind: GameKind) {
         if (isResting()) {
             child = ChildScreen.Resting
             return
         }
-        val intent = packageManager.getLaunchIntentForPackage(packageName) ?: return
-        startActivity(intent)
+        child = ChildScreen.Game(kind, System.currentTimeMillis())
     }
 
-    private fun setGameAllowed(packageName: String, allowed: Boolean) {
-        allowedGames = if (allowed) allowedGames + packageName else allowedGames - packageName
-        prefs.allowedGames = allowedGames
-        lock.configure(allowedGames)
+    /** Game time counts toward the daily limit. */
+    private fun endGame(game: ChildScreen.Game, done: Boolean) {
+        prefs.addWatched((System.currentTimeMillis() - game.startedAt).coerceAtLeast(0))
+        if (done) child = ChildScreen.GameDone(game.kind) else goHomeOrRest()
+    }
+
+    private fun goHomeOrRest() {
+        child = if (isResting()) ChildScreen.Resting else ChildScreen.Home
+    }
+
+    // --- Video streaming ---
+
+    private fun loadVideo(video: VideoEntry) {
+        val loading = ChildScreen.Loading(video)
+        child = loading
+        lifecycleScope.launch {
+            val streams = runCatching { repo.resolveForPlayback(video) }.getOrNull()
+            if (child != loading) return@launch
+            if (streams != null) {
+                child = ChildScreen.Playing(video, streams)
+            } else {
+                onPlaybackError()
+            }
+        }
+    }
+
+    private fun onPlaybackError() {
+        child = ChildScreen.Picker
+        Toast.makeText(this, "Can't play right now. Is Wi-Fi on?", Toast.LENGTH_LONG).show()
     }
 
     private fun pauseLock() {
         if (lock.isLocked()) stopLockTask()
-        isLocked = false
+        lockState = lock.state()
         Toast.makeText(this, "Lock paused until Child mode", Toast.LENGTH_SHORT).show()
     }
 
     private fun releaseDeviceOwner() {
         if (lock.isLocked()) stopLockTask()
         lock.releaseDeviceOwner()
-        isLocked = false
+        lockState = lock.state()
         Toast.makeText(this, "Device owner removed. You can uninstall now.", Toast.LENGTH_LONG).show()
     }
 

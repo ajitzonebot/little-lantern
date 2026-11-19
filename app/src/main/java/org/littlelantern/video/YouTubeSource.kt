@@ -14,10 +14,12 @@ data class ResolvedVideo(
     val durationMs: Long,
     val videoUrl: String,
     val audioUrl: String?,
+    val thumbnailUrl: String?,
 )
 
 /**
  * Reads YouTube through NewPipeExtractor: direct media streams, no ads, no recommendations.
+ * Stream links expire after some hours, so playback resolves them again each time.
  * Blocking network calls: use off the main thread.
  */
 object YouTubeSource {
@@ -81,6 +83,8 @@ object YouTubeSource {
             durationMs = info.duration * 1000,
             videoUrl = videoUrl,
             audioUrl = audioUrl,
+            thumbnailUrl = info.thumbnails.filter { it.height in 1..480 }.maxByOrNull { it.height }?.url
+                ?: info.thumbnails.firstOrNull()?.url,
         )
     }
 

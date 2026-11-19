@@ -1,5 +1,17 @@
 # Setup
 
+## Quick start: your own phone (App pinning)
+
+1. Install the app from https://github.com/ajitzonebot/little-lantern/releases/download/latest/little-lantern.apk
+2. Android Settings, Security (or Security and privacy, More settings), **App pinning**: turn it on, and turn on **Ask for PIN before unpinning**. The menu name differs by phone.
+3. Open Little Lantern, choose a parent PIN. In Child mode the app pins itself; tap **Pin** or **Got it** if Android asks.
+4. Parent mode shows a green "App pinning is on" card when it works.
+
+Limit: restarting the phone ends pinning. The app pins again when it is opened.
+
+## Full lock: spare phone
+
+
 ## 1. Prepare the device
 
 1. Use a spare Android phone or tablet, Android 9 or later.
@@ -28,17 +40,12 @@ Expected output starts with `Success: Device owner set`. If it says the device a
 2. The app locks itself into Child mode.
 3. Enrol a fingerprint in Android Settings **before** step 1 if you want fingerprint unlock; otherwise the PIN is used.
 
-## 5. Add games
-
-1. Install the open-source games you want (for example from F-Droid) while in Parent mode with the lock paused.
-2. In Parent mode, switch on each game under **Games allowed in Child mode**.
-
 ## 6. Add videos
 
-1. Connect the device to Wi-Fi.
+1. Connect the device to Wi-Fi. Videos stream, so Wi-Fi is also needed while your child watches.
 2. Parent mode, then **Videos**. Paste a YouTube video or playlist link and tap **Add and check**.
    - Or: Parent mode, **Pause lock**, open the YouTube app, **Share > Little Lantern**, then go back to Child mode.
-3. Wait for each video to download and be checked. Read the result, then **Approve** or **Reject**.
+3. Wait for each video to be checked (short samples are streamed; nothing is downloaded). Read the result, then **Approve** or **Reject**.
 
 ## 7. Feedback to GitHub
 

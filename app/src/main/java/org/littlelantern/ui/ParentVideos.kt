@@ -74,7 +74,7 @@ fun ParentVideosScreen(
     val ordered = videos.sortedBy {
         when (it.status) {
             VideoStatus.REVIEW -> 0
-            VideoStatus.DOWNLOADING, VideoStatus.CHECKING, VideoStatus.QUEUED -> 1
+            VideoStatus.CHECKING, VideoStatus.QUEUED -> 1
             VideoStatus.FAILED -> 2
             VideoStatus.APPROVED -> 3
         }
@@ -106,7 +106,7 @@ fun ParentVideosScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Add and check") }
                 Text(
-                    "Tip: in the YouTube app, Share then Little Lantern. Pause the lock first from Parent mode.",
+                    "Nothing is downloaded: the check streams short samples and videos stream when played. Tip: YouTube app, Share, Little Lantern (pause the lock first).",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 if (message != null) Text(message, style = MaterialTheme.typography.bodyMedium)
@@ -137,7 +137,7 @@ private fun VideoCard(
 
         val report = video.metrics?.let { KidCheck.evaluate(it) }
         when (video.status) {
-            VideoStatus.QUEUED, VideoStatus.DOWNLOADING, VideoStatus.CHECKING ->
+            VideoStatus.QUEUED, VideoStatus.CHECKING ->
                 Text(progressText ?: "Waiting", style = MaterialTheme.typography.bodyMedium)
             VideoStatus.FAILED -> {
                 Text("Could not add: ${video.error ?: "unknown error"}", color = HighColor)
