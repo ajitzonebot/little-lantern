@@ -40,6 +40,16 @@ Expected output starts with `Success: Device owner set`. If it says the device a
    - Or: Parent mode, **Pause lock**, open the YouTube app, **Share > Little Lantern**, then go back to Child mode.
 3. Wait for each video to download and be checked. Read the result, then **Approve** or **Reject**.
 
+## 7. Feedback to GitHub
+
+1. On GitHub: **Settings > Developer settings > Personal access tokens > Fine-grained tokens > Generate new token**.
+2. Repository access: **Only select repositories**, pick this repository.
+3. Permissions: **Issues: Read and write**. Nothing else.
+4. Copy the token. On the phone: Parent mode, **Feedback**, paste it, **Save GitHub settings**.
+5. Write feedback with the **Feedback** button on any screen. Later, Parent mode, **Feedback**, **Send to GitHub**.
+
+The token is stored only in the app's private storage on the phone. Without a token, use **Copy unsent as text**.
+
 ## Uninstalling
 
 1. Parent mode, then **Remove device owner (before uninstall)**.

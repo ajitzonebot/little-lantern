@@ -1,5 +1,8 @@
 package org.littlelantern
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.KeyEvent
@@ -14,8 +17,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.littlelantern.data.Prefs
 import org.littlelantern.data.installedLaunchableApps
+import org.littlelantern.feedback.Feedback
+import org.littlelantern.feedback.FeedbackFormat
+import org.littlelantern.feedback.FeedbackKind
 import org.littlelantern.gate.ParentGate
 import org.littlelantern.gate.PressSequenceDetector
 import org.littlelantern.lock.LockController
@@ -23,6 +33,8 @@ import org.littlelantern.session.AfterVideo
 import org.littlelantern.session.SessionRules
 import org.littlelantern.ui.ChildHome
 import org.littlelantern.ui.ClosingScreen
+import org.littlelantern.ui.FeedbackHost
+import org.littlelantern.ui.FeedbackScreen
 import org.littlelantern.ui.LittleLanternTheme
 import org.littlelantern.ui.ParentHome
 import org.littlelantern.ui.ParentStatus
@@ -39,7 +51,7 @@ import org.littlelantern.video.VideoStatus
 import java.time.LocalDate
 import java.time.ZoneId
 
-enum class Mode { SETUP, CHILD, PIN, PARENT, PARENT_VIDEOS }
+enum class Mode { SETUP, CHILD, PIN, PARENT, PARENT_VIDEOS, PARENT_FEEDBACK }
 
 sealed interface ChildScreen {
     data object Home : ChildScreen
@@ -60,7 +72,8 @@ class MainActivity : FragmentActivity() {
     private lateinit var prefs: Prefs
     private lateinit var lock: LockController
     private lateinit var gate: ParentGate
-    private val repo by lazy { (application as LittleLanternApp).videos }
+    private val app by lazy { application as LittleLanternApp }
+    private val repo by lazy { app.videos }
     private val volumeSequence = PressSequenceDetector(requiredPresses = 5, windowMillis = 3_000)
 
     private var mode by mutableStateOf(Mode.CHILD)
@@ -69,6 +82,10 @@ class MainActivity : FragmentActivity() {
     private var isLocked by mutableStateOf(false)
     /** Bumped whenever parent settings or usage change, so parent screens re-read them. */
     private var settingsVersion by mutableIntStateOf(0)
+    private var feedbackItems by mutableStateOf(emptyList<Feedback>())
+    private var feedbackSending by mutableStateOf(false)
+    private var feedbackMessage by mutableStateOf<String?>(null)
+    private var showFeedback by mutableStateOf(true)
     private var sessionWatchedMs = 0L
     private var lastInteraction = 0L
 
@@ -79,6 +96,8 @@ class MainActivity : FragmentActivity() {
         gate = ParentGate(this, onUnlocked = ::enterParentMode, onNeedPin = { mode = Mode.PIN })
 
         allowedGames = prefs.allowedGames
+        showFeedback = prefs.showFeedbackButton
+        feedbackItems = app.feedback.list()
         lock.configure(allowedGames)
         mode = if (prefs.hasPin) Mode.CHILD else Mode.SETUP
         child = if (isResting()) ChildScreen.Resting else ChildScreen.Home
@@ -86,7 +105,7 @@ class MainActivity : FragmentActivity() {
         // Back never leaves the app. In parent screens it steps back; in Child mode it does nothing.
         onBackPressedDispatcher.addCallback(this) {
             when (mode) {
-                Mode.PARENT_VIDEOS -> mode = Mode.PARENT
+                Mode.PARENT_VIDEOS, Mode.PARENT_FEEDBACK -> mode = Mode.PARENT
                 Mode.PIN, Mode.PARENT -> enterChildMode()
                 else -> Unit
             }
@@ -95,6 +114,7 @@ class MainActivity : FragmentActivity() {
         setContent {
             LittleLanternTheme {
                 val videos by repo.videos.collectAsState()
+                FeedbackHost(enabled = showFeedback, screenName = screenName(), onSave = ::saveFeedback) {
                 when (mode) {
                     Mode.SETUP -> PinSetupScreen(onPinChosen = { pin ->
                         prefs.setPin(pin)
@@ -123,6 +143,7 @@ class MainActivity : FragmentActivity() {
                                 voluntaryStops = prefs.voluntaryStops,
                                 toReview = videos.count { it.status == VideoStatus.REVIEW },
                                 approved = videos.count { it.status == VideoStatus.APPROVED },
+                                unsentFeedback = feedbackItems.count { !it.sent },
                             )
                         }
                         ParentHome(
@@ -131,6 +152,7 @@ class MainActivity : FragmentActivity() {
                             allowedGames = allowedGames,
                             onToggleGame = ::setGameAllowed,
                             onOpenVideos = { mode = Mode.PARENT_VIDEOS },
+                            onOpenFeedback = { feedbackMessage = null; mode = Mode.PARENT_FEEDBACK },
                             onCycleDailyLimit = { prefs.dailyLimitMin = next(prefs.dailyLimitMin, listOf(30, 45, 60, 90)); settingsVersion++ },
                             onCycleSession = { prefs.sessionMin = next(prefs.sessionMin, listOf(10, 15, 20, 30)); settingsVersion++ },
                             onCycleRest = { prefs.restMin = next(prefs.restMin, listOf(30, 60, 120, 180)); settingsVersion++ },
@@ -157,9 +179,100 @@ class MainActivity : FragmentActivity() {
                             onBack = { repo.clearMessage(); mode = Mode.PARENT },
                         )
                     }
+
+                    Mode.PARENT_FEEDBACK -> FeedbackScreen(
+                        items = feedbackItems,
+                        repo = prefs.githubRepo,
+                        tokenSet = prefs.githubToken.isNotEmpty(),
+                        showButton = showFeedback,
+                        sending = feedbackSending,
+                        message = feedbackMessage,
+                        onSaveSettings = { repoName, token ->
+                            prefs.githubRepo = repoName
+                            if (token != null) prefs.githubToken = token
+                            feedbackMessage = "GitHub settings saved."
+                            settingsVersion++
+                        },
+                        onToggleButton = { on -> showFeedback = on; prefs.showFeedbackButton = on },
+                        onSendAll = ::sendFeedbackToGitHub,
+                        onCopyAll = ::copyFeedback,
+                        onDelete = { id -> app.feedback.delete(id); feedbackItems = app.feedback.list() },
+                        onBack = { mode = Mode.PARENT },
+                    )
+                }
                 }
             }
         }
+    }
+
+    // --- Feedback ---
+
+    private fun screenName(): String = when (mode) {
+        Mode.SETUP -> "PIN setup"
+        Mode.PIN -> "Parent PIN"
+        Mode.PARENT -> "Parent home"
+        Mode.PARENT_VIDEOS -> "Parent videos"
+        Mode.PARENT_FEEDBACK -> "Parent feedback"
+        Mode.CHILD -> "Child: " + when (child) {
+            ChildScreen.Home -> "Home"
+            ChildScreen.Picker -> "Video picker"
+            is ChildScreen.Playing -> "Video playing"
+            is ChildScreen.Paused -> "Pause"
+            ChildScreen.Closing -> "Closing"
+            ChildScreen.Resting -> "Resting"
+        }
+    }
+
+    private fun saveFeedback(screen: String, kind: FeedbackKind, text: String) {
+        app.feedback.add(screen, kind, text)
+        feedbackItems = app.feedback.list()
+        Toast.makeText(this, "Feedback saved. Send it from Parent mode.", Toast.LENGTH_SHORT).show()
+    }
+
+    private val appVersion: String
+        get() = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: "unknown"
+
+    private val deviceInfo: String
+        get() = "${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE}"
+
+    private fun sendFeedbackToGitHub() {
+        val repoName = prefs.githubRepo
+        val token = prefs.githubToken
+        val pending = feedbackItems.filter { !it.sent }
+        if (pending.isEmpty() || token.isEmpty()) return
+        feedbackSending = true
+        feedbackMessage = null
+        lifecycleScope.launch {
+            var sent = 0
+            var error: String? = null
+            withContext(Dispatchers.IO) {
+                for (f in pending) {
+                    try {
+                        val url = app.github.create(
+                            repoName,
+                            token,
+                            FeedbackFormat.title(f),
+                            FeedbackFormat.body(f, appVersion, deviceInfo),
+                            FeedbackFormat.labels(f),
+                        )
+                        app.feedback.markSent(f.id, url)
+                        sent++
+                    } catch (e: Exception) {
+                        error = e.message ?: e.javaClass.simpleName
+                        break
+                    }
+                }
+            }
+            feedbackItems = app.feedback.list()
+            feedbackSending = false
+            feedbackMessage = if (error == null) "Sent $sent to GitHub." else "Sent $sent. Stopped: $error"
+        }
+    }
+
+    private fun copyFeedback() {
+        val text = FeedbackFormat.asText(feedbackItems.filter { !it.sent }, appVersion, deviceInfo)
+        getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Little Lantern feedback", text))
+        feedbackMessage = "Copied. Paste it into a GitHub issue or a message."
     }
 
     @androidx.compose.runtime.Composable

@@ -50,6 +50,10 @@ Result: **Calm**, **Check before approving** or **Not recommended**. Thresholds 
 - Defaults: 60 min a day, 15 min sessions, 60 min rest. The parent can change them.
 - Three choices at a time, the same set all week, rotating weekly.
 
+## Feedback while testing
+
+Every screen has a small **Feedback** button (top right). Notes are saved on the phone with the screen name. In Parent mode, **Feedback > Send to GitHub** turns each note into an issue labelled `feedback` plus `bug`, `idea` or `other`. Setup: [docs/SETUP.md](docs/SETUP.md#7-feedback-to-github). Switch the button off in Parent mode when testing is done.
+
 ## Phase 1 features
 
 - Runs as **device owner** in **Lock Task Mode**: no home, recents, notifications or other apps.

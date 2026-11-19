@@ -53,6 +53,7 @@ data class ParentStatus(
     val voluntaryStops: Int,
     val toReview: Int,
     val approved: Int,
+    val unsentFeedback: Int,
 )
 
 @Composable
@@ -62,6 +63,7 @@ fun ParentHome(
     allowedGames: Set<String>,
     onToggleGame: (String, Boolean) -> Unit,
     onOpenVideos: () -> Unit,
+    onOpenFeedback: () -> Unit,
     onCycleDailyLimit: () -> Unit,
     onCycleSession: () -> Unit,
     onCycleRest: () -> Unit,
@@ -97,6 +99,11 @@ fun ParentHome(
                 Text(
                     if (status.toReview > 0) "Videos: ${status.toReview} to review" else "Videos (${status.approved} approved)",
                 )
+            }
+        }
+        item {
+            OutlinedButton(onClick = onOpenFeedback, modifier = Modifier.fillMaxWidth()) {
+                Text(if (status.unsentFeedback > 0) "Feedback: ${status.unsentFeedback} not sent" else "Feedback")
             }
         }
         item { Text("Limits", style = MaterialTheme.typography.titleMedium) }

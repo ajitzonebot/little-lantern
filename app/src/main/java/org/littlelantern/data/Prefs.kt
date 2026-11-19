@@ -76,7 +76,24 @@ class Prefs(context: Context) {
         get() = prefs.getInt(KEY_VOLUNTARY_STOPS, 0)
         set(value) = prefs.edit().putInt(KEY_VOLUNTARY_STOPS, value).apply()
 
+    /** Feedback button on every screen; on while testing. */
+    var showFeedbackButton: Boolean
+        get() = prefs.getBoolean(KEY_SHOW_FEEDBACK, true)
+        set(value) = prefs.edit().putBoolean(KEY_SHOW_FEEDBACK, value).apply()
+
+    var githubRepo: String
+        get() = prefs.getString(KEY_GITHUB_REPO, null) ?: "ajitzonebot/little-lantern"
+        set(value) = prefs.edit().putString(KEY_GITHUB_REPO, value.trim()).apply()
+
+    /** Personal access token, stored only on this phone (app-private storage). */
+    var githubToken: String
+        get() = prefs.getString(KEY_GITHUB_TOKEN, null) ?: ""
+        set(value) = prefs.edit().putString(KEY_GITHUB_TOKEN, value.trim()).apply()
+
     private companion object {
+        const val KEY_SHOW_FEEDBACK = "show_feedback"
+        const val KEY_GITHUB_REPO = "github_repo"
+        const val KEY_GITHUB_TOKEN = "github_token"
         const val KEY_DAILY_LIMIT = "daily_limit_min"
         const val KEY_SESSION = "session_min"
         const val KEY_REST = "rest_min"
