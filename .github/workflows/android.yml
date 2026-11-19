@@ -5,6 +5,9 @@ on:
     branches: ["**"]
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -22,3 +25,16 @@ jobs:
         with:
           name: little-lantern-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+      # Direct phone download link, refreshed on every push:
+      # https://github.com/<owner>/<repo>/releases/download/latest/little-lantern.apk
+      - name: Publish APK to the "latest" release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk little-lantern.apk
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest little-lantern.apk \
+            --target "$GITHUB_SHA" \
+            --title "Latest test build" \
+            --notes "Debug build from ${GITHUB_REF_NAME} at ${GITHUB_SHA::7}. Install on the dedicated device, then follow docs/SETUP.md."

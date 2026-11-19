@@ -8,10 +8,10 @@
 
 ## 2. Install the app
 
-Download `little-lantern-debug-apk` from the latest **Android CI** run on GitHub, unzip it, then:
+Download https://github.com/ajitzonebot/little-lantern/releases/download/latest/little-lantern.apk on the device and open it (allow "Install unknown apps" for your browser), or from a computer:
 
 ```bash
-adb install app-debug.apk
+adb install little-lantern.apk
 ```
 
 ## 3. Make Little Lantern the device owner

@@ -66,7 +66,7 @@ Every screen has a small **Feedback** button (top right). Notes are saved on the
 
 You need a **spare Android device (Android 9+) with no Google account added**. Device owner cannot be set on a phone that already has accounts. Steps: [docs/SETUP.md](docs/SETUP.md).
 
-The debug APK is built by GitHub Actions on every push: open the latest **Android CI** run and download `little-lantern-debug-apk`.
+**Download the app:** https://github.com/ajitzonebot/little-lantern/releases/download/latest/little-lantern.apk (rebuilt on every push).
 
 ## Suggested open-source games
 
