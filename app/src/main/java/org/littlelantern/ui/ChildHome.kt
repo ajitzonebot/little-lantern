@@ -35,7 +35,7 @@ import org.littlelantern.data.AppEntry
 private val calmIconFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0.5f) })
 
 @Composable
-fun ChildHome(games: List<AppEntry>, onOpenGame: (String) -> Unit) {
+fun ChildHome(games: List<AppEntry>, hasVideos: Boolean, onOpenVideos: () -> Unit, onOpenGame: (String) -> Unit) {
     Column(
         Modifier
             .fillMaxSize()
@@ -54,7 +54,13 @@ fun ChildHome(games: List<AppEntry>, onOpenGame: (String) -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item(key = "videos") {
-                Tile(label = "Videos", subtitle = "Coming soon", icon = null, enabled = false, onClick = {})
+                Tile(
+                    label = "Videos",
+                    subtitle = if (hasVideos) null else "Ask a grown-up to add some",
+                    icon = null,
+                    enabled = hasVideos,
+                    onClick = onOpenVideos,
+                )
             }
             items(games, key = { it.packageName }) { app ->
                 Tile(label = app.label, subtitle = null, icon = app.icon, enabled = true) {

@@ -33,6 +33,13 @@ Expected output starts with `Success: Device owner set`. If it says the device a
 1. Install the open-source games you want (for example from F-Droid) while in Parent mode with the lock paused.
 2. In Parent mode, switch on each game under **Games allowed in Child mode**.
 
+## 6. Add videos
+
+1. Connect the device to Wi-Fi.
+2. Parent mode, then **Videos**. Paste a YouTube video or playlist link and tap **Add and check**.
+   - Or: Parent mode, **Pause lock**, open the YouTube app, **Share > Little Lantern**, then go back to Child mode.
+3. Wait for each video to download and be checked. Read the result, then **Approve** or **Reject**.
+
 ## Uninstalling
 
 1. Parent mode, then **Remove device owner (before uninstall)**.

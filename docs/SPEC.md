@@ -45,19 +45,21 @@ In February 2026 the AAP replaced fixed limits with a "5 Cs" framework (Child, C
 
 Across weeks: daily budget falls by a parent-set step to a floor; library rotates weekly; replays capped per day. These are design hypotheses, not tested interventions.
 
-## Adding videos (Phase 2 and 3)
+## Adding videos (built in Phase 2)
 
-1. Parent pastes a YouTube link in Parent mode.
-2. App resolves the stream with NewPipeExtractor (GPL-3.0, no ads, no recommendations) and downloads it to app storage.
-3. App scores it on the device: cuts per minute, colour saturation, loudness spikes, length; parent ticks "fantastical".
-4. Parent approves or rejects.
+Links and playlists only; no file import.
+
+1. Parent pastes a YouTube video or playlist link in Parent mode, or shares it from the YouTube app.
+2. App resolves the streams with NewPipeExtractor (GPL-3.0, no ads, no recommendations) and downloads at most 480p to app storage. Videos over 30 minutes are skipped. Playlists: up to 50 videos.
+3. Kid check on the device: cuts per minute, brightness jumps per minute, mean saturation, loud sound spikes per minute, length, fantastical hint words in title and description, plus the parent's own tick.
+4. Verdict: 2+ high factors = Not recommended; 1 high or 2+ caution = Check; else Calm. Parent approves or rejects.
 
 ## Roadmap
 
 1. **Lockdown shell** (this release): device owner, Lock Task Mode, home launcher, volume x5 + fingerprint + PIN gate, Child and Parent mode, allowlisted games.
    Gate: child cannot exit in 10 minutes of trying; reboot returns to the app.
-2. **Calm player**: offline allowlist, thumbnail picker, no autoplay, pause screen, saturation filter, natural-end session, closing routine.
-3. **Curation**: add by link with NewPipeExtractor, on-device scoring, score card, budgets, dashboard, mood log.
+2. **Calm player + curation** (this release): add by link or playlist with NewPipeExtractor, on-device kid check, parent approval, thumbnail picker, no autoplay, pause screen, saturation filter, volume cap, natural-end sessions, closing routine, rest period, daily limit.
+3. **Insights**: hand-over mood log, weekly dashboard, calm-down mode.
 4. **Games and boredom engine**: in-app calm games (counting, shape sort, letter trace, match pairs, picture book) and boredom levers.
 
 ## Validation plan

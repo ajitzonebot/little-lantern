@@ -2,7 +2,7 @@
 
 A calm, locked-down player for toddlers on Android. Parent-approved slow videos and simple open-source games, with no ads, no autoplay, no feed, and sessions that end on their own.
 
-> Status: **Phase 1 (lockdown shell)**. Video playback arrives in Phase 2. See the [roadmap](docs/SPEC.md#roadmap).
+> Status: **Phase 2 (calm video player + kid check)**. See the [roadmap](docs/SPEC.md#roadmap).
 
 ## Why
 
@@ -23,6 +23,32 @@ Little Lantern is built around one rule: **make stopping easy and predictable.**
 | Parent mode | Parent | Settings, allowed games, maintenance | Press volume up or down **5 times within 3 s**, then **fingerprint** (6-digit PIN fallback) |
 
 Parent mode returns to Child mode after 2 minutes without a touch.
+
+## Videos: links and playlists only
+
+1. In Parent mode, open **Videos** and paste a YouTube video or playlist link (or use **Share > Little Lantern** in the YouTube app).
+2. The app fetches the video with [NewPipeExtractor](https://github.com/teamnewpipe/newpipeextractor): direct streams, no ads, no recommendations. It downloads a small copy (at most 480p) so playback is offline. Playlists add up to 50 videos.
+3. **Kid check**, measured on the phone:
+
+| Check | What is measured | Why (see docs/SPEC.md) |
+| --- | --- | --- |
+| Pace | Scene cuts per minute | Fast pacing lowered self-control right after viewing (Lillard 2011); evidence mixed |
+| Brightness jumps | Large brightness changes per minute | Flashes are strong attention grabbers |
+| Colour intensity | Average colour saturation | Weak evidence; busy visuals distract (Fisher 2014) |
+| Sudden loud sounds | Jumps of 10 dB or more above the typical level, per minute | Part of the overstimulation pattern |
+| Length | Minutes | Short videos give natural stopping points |
+| Fantastical content | Title and description words (surprise eggs, compilation, superhero, magic...) plus a parent tick box | Fantastical events lowered self-control (Lillard 2015) |
+
+Result: **Calm**, **Check before approving** or **Not recommended**. Thresholds are this project's defaults, not research numbers. The parent approves or rejects every video; nothing reaches Child mode without approval.
+
+## Calm playback
+
+- One video at a time. No controls, no seeking, no autoplay, no queue.
+- Colour reduced to 60% and volume capped at 60%.
+- After each video, a still pause screen; "One more" or "All done" appear after 30 seconds.
+- Sessions end only when a video finishes, never mid-video, then the same closing screen every time and a rest period.
+- Defaults: 60 min a day, 15 min sessions, 60 min rest. The parent can change them.
+- Three choices at a time, the same set all week, rotating weekly.
 
 ## Phase 1 features
 
