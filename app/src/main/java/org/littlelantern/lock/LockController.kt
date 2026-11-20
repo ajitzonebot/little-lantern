@@ -20,11 +20,10 @@ class LockController(private val context: Context) {
     val isDeviceOwner: Boolean
         get() = dpm.isDeviceOwnerApp(context.packageName)
 
-    /** Allows only this app plus the parent-approved game apps to run in lock task mode. */
-    fun configure(allowedGamePackages: Set<String>) {
+    /** Allows only this app to run in lock task mode. All games are built in. */
+    fun configure() {
         if (!isDeviceOwner) return
-        val packages = (allowedGamePackages + context.packageName).toTypedArray()
-        dpm.setLockTaskPackages(admin, packages)
+        dpm.setLockTaskPackages(admin, arrayOf(context.packageName))
         // No home, recents, notifications, status bar info or power menu while locked.
         dpm.setLockTaskFeatures(admin, DevicePolicyManager.LOCK_TASK_FEATURE_NONE)
         dpm.setStatusBarDisabled(admin, true)

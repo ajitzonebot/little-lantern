@@ -12,8 +12,8 @@ android {
         applicationId = "org.littlelantern"
         minSdk = 28
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
     }
 
     buildTypes {
@@ -25,12 +25,19 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // NewPipeExtractor uses newer java.* APIs than Android 9 ships.
+        isCoreLibraryDesugaringEnabled = true
     }
     kotlinOptions {
         jvmTarget = "17"
     }
     buildFeatures {
         compose = true
+    }
+    packaging {
+        resources {
+            excludes += setOf("META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*")
+        }
     }
 }
 
@@ -43,7 +50,16 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.fragment:fragment-ktx:1.8.3")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
     implementation("androidx.biometric:biometric:1.1.0")
 
+    // Streaming: NewPipeExtractor resolves YouTube links (no ads, no recommendations), Media3 plays them.
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.27.1")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("io.coil-kt:coil-compose:2.7.0")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.2")
+
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

@@ -10,6 +10,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // NewPipeExtractor is published on JitPack only.
+        maven("https://jitpack.io")
     }
 }
 rootProject.name = "little-lantern"

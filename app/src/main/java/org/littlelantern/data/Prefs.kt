@@ -2,6 +2,9 @@ package org.littlelantern.data
 
 import android.content.Context
 import org.littlelantern.gate.PinHasher
+import org.littlelantern.session.SessionMath
+import java.time.LocalDate
+import java.time.YearMonth
 import java.util.Base64
 
 /** Small local settings store. Nothing leaves the device. */
@@ -29,15 +32,65 @@ class Prefs(context: Context) {
         return PinHasher.verify(pin, decoder.decode(salt), decoder.decode(hash))
     }
 
-    var allowedGames: Set<String>
-        get() = prefs.getStringSet(KEY_ALLOWED_GAMES, emptySet())?.toSet() ?: emptySet()
+    /** Child's birth month, used to pick the games for their age. Null until the parent sets it. */
+    var birthMonth: YearMonth?
+        get() = prefs.getString(KEY_BIRTH_MONTH, null)?.let { runCatching { YearMonth.parse(it) }.getOrNull() }
         set(value) {
-            prefs.edit().putStringSet(KEY_ALLOWED_GAMES, value).apply()
+            prefs.edit().putString(KEY_BIRTH_MONTH, value?.toString()).apply()
         }
+
+    /** Highest playback volume the parent allows, 0..1. The session lowers it further toward the end. */
+    var volumeCap: Float
+        get() = prefs.getFloat(KEY_VOLUME_CAP, 0.7f)
+        set(value) {
+            prefs.edit().putFloat(KEY_VOLUME_CAP, value.coerceIn(0.1f, 1f)).apply()
+        }
+
+    /** When on, colour-only games are hidden and colour sorting uses shapes. */
+    var colourBlindMode: Boolean
+        get() = prefs.getBoolean(KEY_COLOUR_BLIND, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_COLOUR_BLIND, value).apply()
+        }
+
+    /** Optional YouTube Data API key for the paid-placement and made-for-kids checks. */
+    var youtubeApiKey: String
+        get() = prefs.getString(KEY_YT_API, "") ?: ""
+        set(value) {
+            prefs.edit().putString(KEY_YT_API, value.trim()).apply()
+        }
+
+    /** Games the parent switched off. */
+    var disabledGames: Set<String>
+        get() = prefs.getStringSet(KEY_DISABLED_GAMES, emptySet())?.toSet() ?: emptySet()
+        set(value) {
+            prefs.edit().putStringSet(KEY_DISABLED_GAMES, value).apply()
+        }
+
+    /** Seconds of Child mode used today. Resets when the date changes. */
+    fun usedSecondsToday(today: LocalDate = LocalDate.now()): Int {
+        if (prefs.getString(KEY_USAGE_DATE, null) != today.toString()) return 0
+        return prefs.getInt(KEY_USAGE_SECONDS, 0)
+    }
+
+    fun addUsage(seconds: Int, today: LocalDate = LocalDate.now()): Int {
+        val total = (usedSecondsToday(today) + seconds).coerceAtMost(SessionMath.LIMIT_SECONDS)
+        prefs.edit()
+            .putString(KEY_USAGE_DATE, today.toString())
+            .putInt(KEY_USAGE_SECONDS, total)
+            .apply()
+        return total
+    }
 
     private companion object {
         const val KEY_PIN_HASH = "pin_hash"
         const val KEY_PIN_SALT = "pin_salt"
-        const val KEY_ALLOWED_GAMES = "allowed_games"
+        const val KEY_BIRTH_MONTH = "birth_month"
+        const val KEY_VOLUME_CAP = "volume_cap"
+        const val KEY_COLOUR_BLIND = "colour_blind"
+        const val KEY_YT_API = "youtube_api_key"
+        const val KEY_DISABLED_GAMES = "disabled_games"
+        const val KEY_USAGE_DATE = "usage_date"
+        const val KEY_USAGE_SECONDS = "usage_seconds"
     }
 }

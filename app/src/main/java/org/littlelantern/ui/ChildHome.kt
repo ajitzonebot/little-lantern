@@ -1,102 +1,131 @@
 package org.littlelantern.ui
 
-import android.graphics.drawable.Drawable
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.ColorMatrix
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.drawable.toBitmap
-import org.littlelantern.data.AppEntry
+import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import org.littlelantern.data.Video
 
-/** Desaturated icons: calm visuals by default. */
-private val calmIconFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0.5f) })
-
+/**
+ * Child home: the parent's videos and a Games tile. No timer is shown; the screen itself calms down.
+ * Videos that would run past the daily hour fade out and cannot start.
+ */
 @Composable
-fun ChildHome(games: List<AppEntry>, onOpenGame: (String) -> Unit) {
-    Column(
-        Modifier
+fun ChildHome(
+    videos: List<Video>,
+    canStart: (Video) -> Boolean,
+    onWatch: (Video) -> Unit,
+    onGames: () -> Unit,
+) {
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
+        modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(24.dp),
+            .background(Palette.Bg)
+            .padding(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Text(
-            "Little Lantern",
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        Spacer(Modifier.height(24.dp))
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(150.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            item(key = "videos") {
-                Tile(label = "Videos", subtitle = "Coming soon", icon = null, enabled = false, onClick = {})
-            }
-            items(games, key = { it.packageName }) { app ->
-                Tile(label = app.label, subtitle = null, icon = app.icon, enabled = true) {
-                    onOpenGame(app.packageName)
-                }
+        item(span = { GridItemSpan(2) }) {
+            Row(Modifier.padding(top = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+                GlyphIcon(Glyph.LANTERN, Palette.Sand, 28.dp)
+                Spacer(Modifier.padding(start = 10.dp))
+                Text("Little Lantern", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = Palette.Sage)
             }
         }
+        item(span = { GridItemSpan(2) }) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 110.dp)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(Palette.Sage)
+                    .clickable(role = Role.Button, onClick = onGames),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("Games", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
+            }
+        }
+        if (videos.isNotEmpty()) {
+            item(span = { GridItemSpan(2) }) {
+                Text("Watch", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.InkSoft)
+            }
+        }
+        items(videos, key = { it.id }) { video ->
+            val enabled = canStart(video)
+            Column(
+                Modifier
+                    .alpha(if (enabled) 1f else 0.25f)
+                    .clip(RoundedCornerShape(18.dp))
+                    .clickable(enabled = enabled, role = Role.Button) { onWatch(video) },
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                AsyncImage(
+                    model = video.thumbnailUrl,
+                    contentDescription = video.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(104.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(Palette.Line),
+                )
+                Text(
+                    video.title,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Palette.Ink,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        item(span = { GridItemSpan(2) }) { Spacer(Modifier.height(24.dp)) }
     }
 }
 
+/** Shown when the day's hour is used up. Same screen every day, no countdown before it. */
 @Composable
-private fun Tile(
-    label: String,
-    subtitle: String?,
-    icon: Drawable?,
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
-    val textColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else 0.4f)
+fun EndScreen() {
     Column(
         Modifier
-            .aspectRatio(1f)
-            .clip(RoundedCornerShape(20.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+            .fillMaxSize()
+            .background(Palette.EndScreen)
+            .padding(32.dp),
         verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        if (icon != null) {
-            val bitmap = remember(icon) { icon.toBitmap(128, 128).asImageBitmap() }
-            Image(
-                bitmap = bitmap,
-                contentDescription = null,
-                colorFilter = calmIconFilter,
-                modifier = Modifier.size(72.dp),
-            )
-            Spacer(Modifier.height(12.dp))
-        }
-        Text(label, style = MaterialTheme.typography.titleMedium, color = textColor, textAlign = TextAlign.Center, maxLines = 2)
-        if (subtitle != null) {
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = textColor)
-        }
+        GlyphIcon(Glyph.LANTERN, Palette.Border, 80.dp)
+        Spacer(Modifier.height(20.dp))
+        Text("The lantern is sleeping", color = Palette.Bg, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+        Spacer(Modifier.height(8.dp))
+        Text("See you tomorrow", color = Color(0xFFE6E1D6), fontSize = 15.sp)
     }
 }

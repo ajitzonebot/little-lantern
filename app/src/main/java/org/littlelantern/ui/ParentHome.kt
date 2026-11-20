@@ -1,17 +1,14 @@
 package org.littlelantern.ui
 
 import android.os.SystemClock
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,6 +17,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -32,81 +31,159 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.drawable.toBitmap
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
-import org.littlelantern.data.AppEntry
+import org.littlelantern.data.Video
+import org.littlelantern.games.GameInfo
+import java.time.YearMonth
 
 /** Parent mode returns to Child mode after this long without a touch. */
 private const val PARENT_IDLE_MILLIS = 120_000L
+
+class ParentSettings(
+    val birthMonth: YearMonth?,
+    val volumeCap: Float,
+    val colourBlind: Boolean,
+    val apiKey: String,
+    val disabledGames: Set<String>,
+    val ageBand: Int,
+    val usedMinutesToday: Int,
+)
+
+class ParentActions(
+    val onBackToChild: () -> Unit,
+    val onAddVideo: () -> Unit,
+    val onRemoveVideo: (String) -> Unit,
+    val onBirthMonth: (YearMonth?) -> Unit,
+    val onVolumeCap: (Float) -> Unit,
+    val onColourBlind: (Boolean) -> Unit,
+    val onApiKey: (String) -> Unit,
+    val onToggleGame: (String, Boolean) -> Unit,
+    val onPauseLock: () -> Unit,
+    val onReleaseDeviceOwner: () -> Unit,
+)
 
 @Composable
 fun ParentHome(
     isDeviceOwner: Boolean,
     isLocked: Boolean,
-    apps: List<AppEntry>,
-    allowedGames: Set<String>,
-    onToggleGame: (String, Boolean) -> Unit,
-    onBackToChild: () -> Unit,
-    onPauseLock: () -> Unit,
-    onReleaseDeviceOwner: () -> Unit,
+    videos: List<Video>,
+    games: List<GameInfo>,
+    settings: ParentSettings,
+    actions: ParentActions,
     lastInteraction: () -> Long,
 ) {
     LaunchedEffect(Unit) {
         while (true) {
             delay(5_000)
             if (SystemClock.uptimeMillis() - lastInteraction() > PARENT_IDLE_MILLIS) {
-                onBackToChild()
+                actions.onBackToChild()
                 break
             }
         }
     }
     var confirmRelease by remember { mutableStateOf(false) }
+    var birthText by remember { mutableStateOf(settings.birthMonth?.toString() ?: "") }
+    var keyText by remember { mutableStateOf(settings.apiKey) }
+    var volume by remember { mutableStateOf(settings.volumeCap) }
 
     LazyColumn(
         Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
-        contentPadding = PaddingValues(24.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item { Text("Parent mode", style = MaterialTheme.typography.headlineSmall) }
-        item { StatusCard(isDeviceOwner, isLocked) }
+        item { StatusCard(isDeviceOwner, isLocked, settings.usedMinutesToday) }
         item {
-            Button(onClick = onBackToChild, modifier = Modifier.fillMaxWidth()) { Text("Back to Child mode") }
+            Button(onClick = actions.onBackToChild, modifier = Modifier.fillMaxWidth()) { Text("Back to Child mode") }
         }
+
+        item { Section("Videos") }
         item {
-            Column {
-                Text("Games allowed in Child mode", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "Only allow apps you have checked: no ads, no links out, no rewards or timers.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
+            OutlinedButton(onClick = actions.onAddVideo, modifier = Modifier.fillMaxWidth()) { Text("Add a video") }
         }
-        items(apps, key = { it.packageName }) { app ->
-            val bitmap = remember(app.packageName) { app.icon.toBitmap(96, 96).asImageBitmap() }
+        if (videos.isEmpty()) {
+            item { Small("No videos yet. Add one with a YouTube link.") }
+        }
+        items(videos, key = { it.id }) { v ->
             Row(
                 Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surface)
+                    .background(Palette.Surface)
                     .padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Image(bitmap = bitmap, contentDescription = null, modifier = Modifier.size(40.dp))
-                Spacer(Modifier.width(12.dp))
-                Text(app.label, modifier = Modifier.weight(1f))
-                Switch(
-                    checked = app.packageName in allowedGames,
-                    onCheckedChange = { onToggleGame(app.packageName, it) },
-                )
+                Column(Modifier.weight(1f)) {
+                    Text(v.title, fontSize = 14.sp, maxLines = 2)
+                    Small("${v.durationSeconds / 60} min · pace ${v.report.paceLabel.lowercase()}")
+                }
+                TextButton(onClick = { actions.onRemoveVideo(v.id) }) { Text("Remove") }
             }
         }
-        item { Text("Maintenance", style = MaterialTheme.typography.titleMedium) }
+
+        item { Section("Child") }
         item {
-            OutlinedButton(onClick = onPauseLock, enabled = isLocked, modifier = Modifier.fillMaxWidth()) {
+            OutlinedTextField(
+                value = birthText,
+                onValueChange = {
+                    birthText = it
+                    val parsed = runCatching { YearMonth.parse(it.trim()) }.getOrNull()
+                    if (parsed != null || it.isBlank()) actions.onBirthMonth(parsed)
+                },
+                label = { Text("Birth month (YYYY-MM)") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        item { Small("Games for age ${settings.ageBand} are shown. Daily limit: 60 minutes, the maximum.") }
+        item {
+            Column {
+                Text("Volume limit: ${(volume * 100).toInt()}%")
+                Slider(
+                    value = volume,
+                    onValueChange = { volume = it },
+                    onValueChangeFinished = { actions.onVolumeCap(volume) },
+                    valueRange = 0.1f..1f,
+                )
+                Small("Keep it at half or below for headphones. The session lowers it further near the end.")
+            }
+        }
+        item {
+            SwitchRow("Colour-blind mode", "Hides colour-only games; colour sorting uses shapes.", settings.colourBlind, actions.onColourBlind)
+        }
+
+        item { Section("Games") }
+        item { Small("The child sees the 10 games for their age. Games from younger ages stay on unless you switch them off.") }
+        items(games, key = { it.id }) { g ->
+            SwitchRow(
+                "${g.title} (age ${g.age})",
+                "${g.area} · ${g.basis}",
+                g.id !in settings.disabledGames,
+            ) { on -> actions.onToggleGame(g.id, on) }
+        }
+
+        item { Section("Online checks") }
+        item {
+            OutlinedTextField(
+                value = keyText,
+                onValueChange = { keyText = it; actions.onApiKey(it) },
+                label = { Text("YouTube Data API key (optional)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        item { Small("Used only for the paid-placement and made-for-kids checks. Without it those show Unknown.") }
+
+        item { Section("Maintenance") }
+        item {
+            OutlinedButton(onClick = actions.onPauseLock, enabled = isLocked, modifier = Modifier.fillMaxWidth()) {
                 Text("Pause lock until Child mode")
             }
         }
@@ -125,7 +202,7 @@ fun ParentHome(
             title = { Text("Remove device owner?") },
             text = { Text("Little Lantern will stop locking this device. Set it up again with adb to restore the lock.") },
             confirmButton = {
-                TextButton(onClick = { confirmRelease = false; onReleaseDeviceOwner() }) { Text("Remove") }
+                TextButton(onClick = { confirmRelease = false; actions.onReleaseDeviceOwner() }) { Text("Remove") }
             },
             dismissButton = {
                 TextButton(onClick = { confirmRelease = false }) { Text("Cancel") }
@@ -135,7 +212,36 @@ fun ParentHome(
 }
 
 @Composable
-private fun StatusCard(isDeviceOwner: Boolean, isLocked: Boolean) {
+private fun Section(title: String) {
+    Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
+}
+
+@Composable
+private fun Small(text: String) {
+    Text(text, style = MaterialTheme.typography.bodySmall, color = Palette.InkSoft)
+}
+
+@Composable
+private fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Palette.Surface)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 14.sp)
+            Small(subtitle)
+        }
+        Spacer(Modifier.width(8.dp))
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
+}
+
+@Composable
+private fun StatusCard(isDeviceOwner: Boolean, isLocked: Boolean, usedMinutes: Int) {
     Column(
         Modifier
             .fillMaxWidth()
@@ -148,11 +254,9 @@ private fun StatusCard(isDeviceOwner: Boolean, isLocked: Boolean) {
             color = if (isDeviceOwner) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error,
         )
         Text("Lock active: ${if (isLocked) "yes" else "no"}")
+        Text("Used today: $usedMinutes of 60 minutes")
         if (!isDeviceOwner) {
-            Text(
-                "See docs/SETUP.md to set device owner with adb.",
-                style = MaterialTheme.typography.bodySmall,
-            )
+            Text("See docs/SETUP.md to set device owner with adb.", style = MaterialTheme.typography.bodySmall)
         }
     }
 }
