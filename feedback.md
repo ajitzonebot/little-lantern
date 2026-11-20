@@ -2,7 +2,7 @@
 
 Mockups: https://claude.ai/artifact/RZKqBTLJBdYfthjQzBuEa3
 
-Add notes as bullets under the screen they belong to. One bullet per point.
+How notes get here: comment on any screen in the mockup canvas and send the comment to Claude. Claude adds it as a bullet under that screen, with the date, and pushes this file.
 
 ## Child: videos and session
 
