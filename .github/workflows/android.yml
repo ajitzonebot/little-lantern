@@ -36,6 +36,6 @@ jobs:
           gh release delete latest --yes --cleanup-tag || true
           gh release create latest little-lantern.apk \
             --target "$GITHUB_SHA" \
-            --prerelease \
-            --title "Latest test build" \
+            --title "Latest build" \
+            --latest \
             --notes "Debug build ${GITHUB_SHA::7} from ${GITHUB_REF_NAME}. Install on the child's phone, then follow docs/SETUP.md."
