@@ -32,12 +32,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import org.littlelantern.data.Video
 import org.littlelantern.games.GameInfo
+import org.littlelantern.lock.LockState
 import java.time.YearMonth
 
 /** Parent mode returns to Child mode after this long without a touch. */
@@ -51,6 +53,16 @@ class ParentSettings(
     val disabledGames: Set<String>,
     val ageBand: Int,
     val usedMinutesToday: Int,
+    val showFeedback: Boolean,
+    val feedbackRepo: String,
+    val feedbackBranch: String,
+)
+
+class FeedbackStatus(
+    val pending: Int,
+    val tokenSet: Boolean,
+    val sending: Boolean,
+    val message: String?,
 )
 
 class ParentActions(
@@ -63,16 +75,22 @@ class ParentActions(
     val onApiKey: (String) -> Unit,
     val onToggleGame: (String, Boolean) -> Unit,
     val onPauseLock: () -> Unit,
+    val onOpenPinningSettings: () -> Unit,
+    val onShowFeedback: (Boolean) -> Unit,
+    /** repo, branch, new token (null keeps the saved one). */
+    val onFeedbackSettings: (String, String, String?) -> Unit,
+    val onSendFeedback: () -> Unit,
     val onReleaseDeviceOwner: () -> Unit,
 )
 
 @Composable
 fun ParentHome(
     isDeviceOwner: Boolean,
-    isLocked: Boolean,
+    lockState: LockState,
     videos: List<Video>,
     games: List<GameInfo>,
     settings: ParentSettings,
+    feedback: FeedbackStatus,
     actions: ParentActions,
     lastInteraction: () -> Long,
 ) {
@@ -89,6 +107,10 @@ fun ParentHome(
     var birthText by remember { mutableStateOf(settings.birthMonth?.toString() ?: "") }
     var keyText by remember { mutableStateOf(settings.apiKey) }
     var volume by remember { mutableStateOf(settings.volumeCap) }
+    var repoText by remember { mutableStateOf(settings.feedbackRepo) }
+    var branchText by remember { mutableStateOf(settings.feedbackBranch) }
+    var tokenText by remember { mutableStateOf("") }
+    val isLocked = lockState != LockState.NONE
 
     LazyColumn(
         Modifier
@@ -98,7 +120,7 @@ fun ParentHome(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item { Text("Parent mode", style = MaterialTheme.typography.headlineSmall) }
-        item { StatusCard(isDeviceOwner, isLocked, settings.usedMinutesToday) }
+        item { StatusCard(isDeviceOwner, lockState, settings.usedMinutesToday, actions.onOpenPinningSettings) }
         item {
             Button(onClick = actions.onBackToChild, modifier = Modifier.fillMaxWidth()) { Text("Back to Child mode") }
         }
@@ -181,6 +203,66 @@ fun ParentHome(
         }
         item { Small("Used only for the paid-placement and made-for-kids checks. Without it those show Unknown.") }
 
+        item { Section("Feedback") }
+        item {
+            SwitchRow(
+                "Feedback button on every screen",
+                "For testing. Notes go to feedback.md on GitHub under the screen they were written on.",
+                settings.showFeedback,
+                actions.onShowFeedback,
+            )
+        }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Button(
+                    onClick = actions.onSendFeedback,
+                    enabled = feedback.pending > 0 && feedback.tokenSet && !feedback.sending,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(if (feedback.sending) "Sending..." else "Send ${feedback.pending} unsent to feedback.md") }
+                if (feedback.message != null) Small(feedback.message)
+            }
+        }
+        item {
+            OutlinedTextField(
+                value = repoText,
+                onValueChange = { repoText = it },
+                label = { Text("Repository (owner/name)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        item {
+            OutlinedTextField(
+                value = branchText,
+                onValueChange = { branchText = it },
+                label = { Text("Branch (blank = default branch)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        item {
+            OutlinedTextField(
+                value = tokenText,
+                onValueChange = { tokenText = it },
+                label = { Text(if (feedback.tokenSet) "Token saved. Paste a new one to replace" else "GitHub token") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        item {
+            Small("Fine-grained token, this repository only, permission Contents: read and write. Stored only on this phone.")
+        }
+        item {
+            OutlinedButton(
+                onClick = {
+                    actions.onFeedbackSettings(repoText, branchText, tokenText.ifBlank { null })
+                    tokenText = ""
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Save GitHub settings") }
+        }
+
         item { Section("Maintenance") }
         item {
             OutlinedButton(onClick = actions.onPauseLock, enabled = isLocked, modifier = Modifier.fillMaxWidth()) {
@@ -241,22 +323,32 @@ private fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChang
 }
 
 @Composable
-private fun StatusCard(isDeviceOwner: Boolean, isLocked: Boolean, usedMinutes: Int) {
+private fun StatusCard(isDeviceOwner: Boolean, lockState: LockState, usedMinutes: Int, onOpenPinningSettings: () -> Unit) {
     Column(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surface)
             .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(
-            if (isDeviceOwner) "Device owner: yes" else "Device owner: no (child can leave the app)",
-            color = if (isDeviceOwner) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error,
-        )
-        Text("Lock active: ${if (isLocked) "yes" else "no"}")
+        val (lockText, ok) = when (lockState) {
+            LockState.FULL -> "Lock: full (device owner)" to true
+            LockState.PINNED -> "Lock: App pinning" to true
+            LockState.NONE -> "Lock: off (child can leave the app)" to false
+        }
+        Text(lockText, color = if (ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error)
         Text("Used today: $usedMinutes of 60 minutes")
         if (!isDeviceOwner) {
-            Text("See docs/SETUP.md to set device owner with adb.", style = MaterialTheme.typography.bodySmall)
+            Text(
+                "App pinning: in Settings, search \"App pinning\" (or \"Screen pinning\"), turn it on with \"Ask for PIN before unpinning\". " +
+                    "Child mode pins the app and the phone asks once to confirm. Pinning ends on restart; open the app again to re-pin. " +
+                    "For a full lock that survives restarts, set device owner on a spare phone (docs/SETUP.md).",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            OutlinedButton(onClick = onOpenPinningSettings, modifier = Modifier.fillMaxWidth()) {
+                Text("Open App pinning settings")
+            }
         }
     }
 }

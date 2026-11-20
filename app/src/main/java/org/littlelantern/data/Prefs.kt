@@ -7,7 +7,7 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.util.Base64
 
-/** Small local settings store. Nothing leaves the device. */
+/** Small local settings store. Only feedback notes leave the device, and only to the GitHub repository the parent sets. */
 class Prefs(context: Context) {
 
     private val prefs = context.getSharedPreferences("little_lantern", Context.MODE_PRIVATE)
@@ -67,6 +67,34 @@ class Prefs(context: Context) {
             prefs.edit().putStringSet(KEY_DISABLED_GAMES, value).apply()
         }
 
+    /** Small Feedback button on every screen (for testing). */
+    var showFeedback: Boolean
+        get() = prefs.getBoolean(KEY_SHOW_FEEDBACK, true)
+        set(value) {
+            prefs.edit().putBoolean(KEY_SHOW_FEEDBACK, value).apply()
+        }
+
+    /** GitHub repository (owner/name) whose feedback.md receives notes. */
+    var feedbackRepo: String
+        get() = prefs.getString(KEY_FB_REPO, DEFAULT_FEEDBACK_REPO) ?: DEFAULT_FEEDBACK_REPO
+        set(value) {
+            prefs.edit().putString(KEY_FB_REPO, value.trim()).apply()
+        }
+
+    /** Branch for feedback.md. Blank means the repository's default branch. */
+    var feedbackBranch: String
+        get() = prefs.getString(KEY_FB_BRANCH, "") ?: ""
+        set(value) {
+            prefs.edit().putString(KEY_FB_BRANCH, value.trim()).apply()
+        }
+
+    /** Fine-grained token with Contents: read and write on that repository only. Stored in app-private storage. */
+    var feedbackToken: String
+        get() = prefs.getString(KEY_FB_TOKEN, "") ?: ""
+        set(value) {
+            prefs.edit().putString(KEY_FB_TOKEN, value.trim()).apply()
+        }
+
     /** Seconds of Child mode used today. Resets when the date changes. */
     fun usedSecondsToday(today: LocalDate = LocalDate.now()): Int {
         if (prefs.getString(KEY_USAGE_DATE, null) != today.toString()) return 0
@@ -92,5 +120,10 @@ class Prefs(context: Context) {
         const val KEY_DISABLED_GAMES = "disabled_games"
         const val KEY_USAGE_DATE = "usage_date"
         const val KEY_USAGE_SECONDS = "usage_seconds"
+        const val KEY_SHOW_FEEDBACK = "show_feedback"
+        const val KEY_FB_REPO = "feedback_repo"
+        const val KEY_FB_BRANCH = "feedback_branch"
+        const val KEY_FB_TOKEN = "feedback_token"
+        const val DEFAULT_FEEDBACK_REPO = "ajitzonebot/little-lantern"
     }
 }

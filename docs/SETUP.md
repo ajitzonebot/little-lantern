@@ -1,20 +1,35 @@
 # Setup
 
-## 1. Prepare the device
+Two ways to lock the app:
 
-1. Use a spare Android phone or tablet, Android 9 or later.
-2. Factory reset it. During setup, **skip adding a Google account**. Device owner can only be set when the device has no accounts.
-3. Enable Developer options (tap Build number 7 times) and turn on **USB debugging**.
+| | App pinning | Device owner |
+| --- | --- | --- |
+| Phone | Any Android 9+ phone, accounts allowed | Spare phone, factory reset, no Google account |
+| Child can leave | No, unless they know the phone PIN | No |
+| After a restart | Not pinned until the app is opened again | Still locked |
+| Setup | One Android setting | adb from a computer |
 
-## 2. Install the app
+## 1. Install the app
 
-Download `little-lantern-debug-apk` from the latest **Android CI** run on GitHub, unzip it, then:
+On the phone, open https://github.com/ajitzonebot/little-lantern/releases/download/latest/little-lantern.apk and install it (allow "Install unknown apps" for the browser). The link always has the newest build. Newer builds install over older ones.
+
+Or from a computer:
 
 ```bash
-adb install app-debug.apk
+adb install -r little-lantern.apk
 ```
 
-## 3. Make Little Lantern the device owner
+## 2a. App pinning (any phone)
+
+1. In Settings, search **App pinning** (some phones: **Screen pinning**). Turn it on, and turn on **Ask for PIN before unpinning**.
+2. Open Little Lantern. When it enters Child mode the phone asks to pin the app; accept.
+3. Parent mode shows the lock state and has **Open App pinning settings**.
+
+## 2b. Device owner (spare phone, full lock)
+
+1. Factory reset. During setup, **skip adding a Google account**.
+2. Enable Developer options (tap Build number 7 times) and turn on **USB debugging**.
+3. Run:
 
 ```bash
 adb shell dpm set-device-owner org.littlelantern/.lock.AdminReceiver
@@ -22,18 +37,29 @@ adb shell dpm set-device-owner org.littlelantern/.lock.AdminReceiver
 
 Expected output starts with `Success: Device owner set`. If it says the device already has accounts, remove them in Settings and try again.
 
-## 4. First run
+## 3. First run
 
-1. Open Little Lantern. Choose a 6-digit parent PIN (entered twice).
-2. The app locks itself into Child mode.
-3. Enrol a fingerprint in Android Settings **before** step 1 if you want fingerprint unlock; otherwise the PIN is used.
+1. Enrol a fingerprint in Android Settings first if you want fingerprint unlock; otherwise the PIN is used.
+2. Open Little Lantern. Choose a 6-digit parent PIN (entered twice).
+3. The app goes to Child mode and locks.
+4. Parent mode: press a volume key 5 times within 3 seconds, then fingerprint or PIN.
+5. In Parent mode set the child's birth month (picks the games) and add videos.
 
-## 5. Add games
+## 4. Feedback to feedback.md
 
-1. Install the open-source games you want (for example from F-Droid) while in Parent mode with the lock paused.
-2. In Parent mode, switch on each game under **Games allowed in Child mode**.
+1. On GitHub: **Settings > Developer settings > Personal access tokens > Fine-grained tokens > Generate new token**.
+2. Repository access: **Only select repositories**, pick this repository.
+3. Permissions: **Contents: Read and write**. Nothing else.
+4. On the phone: Parent mode, **Feedback** section, paste the token, set the branch if not the default, **Save GitHub settings**.
+5. Tap **Feedback** (top right of any screen), write the note, **Save**. The app adds it to `feedback.md` under that screen's heading as one commit. If sending fails, notes stay on the phone; **Send unsent** in Parent mode retries.
+
+The token is stored only in the app's private storage. Anyone with the token can change files in the repository, so use a token limited to this one repository and revoke it after testing.
 
 ## Uninstalling
+
+App pinning: unpin (Parent mode, **Pause lock until Child mode**), then uninstall normally.
+
+Device owner:
 
 1. Parent mode, then **Remove device owner (before uninstall)**.
 2. Uninstall normally, or:
@@ -42,7 +68,8 @@ Expected output starts with `Success: Device owner set`. If it says the device a
 adb uninstall org.littlelantern
 ```
 
-## Known limits (Phase 1)
+## Known limits
 
-- The volume-key gesture works only while Little Lantern is on screen. If the child is inside a game, finish or back out of the game first.
+- The volume-key gesture works only while Little Lantern is on screen.
 - Check on your device that the fingerprint prompt appears while the lock is active; the PIN fallback always works.
+- App pinning ends on restart; the app pins itself again when opened, but the phone asks to confirm each time.

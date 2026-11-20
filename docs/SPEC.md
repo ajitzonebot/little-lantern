@@ -66,8 +66,9 @@ Background #F4F1EA, surface #FBF9F4, ink #2F2F2B (11.9:1), soft ink #5F5A50 (6.1
 ## Roadmap
 
 1. Lockdown shell: done.
-2. Streaming player, stream check, 60-minute session with calming, 30 games: this release.
-3. Next: test on a device, tune thresholds from real videos, fix whatever feedback.md collects.
+2. Streaming player, stream check, 60-minute session with calming, 30 games: done (0.2.0).
+3. App pinning on any phone, in-app feedback to feedback.md, fixed APK link and signing key: this release (0.3.0).
+4. Next: test on a device, tune thresholds from real videos, fix whatever feedback.md collects.
 
 ## Validation plan
 

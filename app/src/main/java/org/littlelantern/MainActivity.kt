@@ -6,6 +6,7 @@ import android.graphics.RenderEffect
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import android.content.Intent
 import android.provider.Settings
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -22,11 +23,16 @@ import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.littlelantern.data.Prefs
 import org.littlelantern.data.Video
 import org.littlelantern.data.VideoStore
+import org.littlelantern.feedback.FeedbackStore
+import org.littlelantern.feedback.FeedbackTarget
+import org.littlelantern.feedback.GitHubFeedback
 import org.littlelantern.games.Catalog
 import org.littlelantern.games.GamesMenu
 import org.littlelantern.games.LocalColourBlind
@@ -35,10 +41,13 @@ import org.littlelantern.games.TtsSpeaker
 import org.littlelantern.gate.ParentGate
 import org.littlelantern.gate.PressSequenceDetector
 import org.littlelantern.lock.LockController
+import org.littlelantern.lock.LockState
 import org.littlelantern.session.SessionMath
 import org.littlelantern.ui.AddVideoScreen
 import org.littlelantern.ui.ChildHome
 import org.littlelantern.ui.EndScreen
+import org.littlelantern.ui.FeedbackHost
+import org.littlelantern.ui.FeedbackStatus
 import org.littlelantern.ui.LittleLanternTheme
 import org.littlelantern.ui.ParentActions
 import org.littlelantern.ui.ParentHome
@@ -46,6 +55,7 @@ import org.littlelantern.ui.ParentSettings
 import org.littlelantern.ui.PinEntryScreen
 import org.littlelantern.ui.PinSetupScreen
 import org.littlelantern.ui.PlayerScreen
+import org.littlelantern.video.Net
 
 enum class Mode { SETUP, CHILD, PIN, PARENT }
 
@@ -69,6 +79,7 @@ class MainActivity : FragmentActivity() {
     private lateinit var lock: LockController
     private lateinit var gate: ParentGate
     private lateinit var speaker: TtsSpeaker
+    private lateinit var feedbackStore: FeedbackStore
     private val volumeSequence = PressSequenceDetector(requiredPresses = 5, windowMillis = 3_000)
 
     private var mode by mutableStateOf(Mode.CHILD)
@@ -77,8 +88,12 @@ class MainActivity : FragmentActivity() {
     private var videos by mutableStateOf(emptyList<Video>())
     private var usedSeconds by mutableIntStateOf(0)
     private var settingsVersion by mutableIntStateOf(0)
-    private var isLocked by mutableStateOf(false)
+    private var lockState by mutableStateOf(LockState.NONE)
+    private var feedbackPending by mutableIntStateOf(0)
+    private var feedbackSending by mutableStateOf(false)
+    private var feedbackMessage by mutableStateOf<String?>(null)
     private var lastInteraction = 0L
+    private var lastLockAttempt = 0L
     private var appliedLevel = -1f
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -87,6 +102,8 @@ class MainActivity : FragmentActivity() {
         videoStore = VideoStore(this)
         lock = LockController(this)
         speaker = TtsSpeaker(this)
+        feedbackStore = FeedbackStore(this)
+        feedbackPending = feedbackStore.list().count { !it.sent }
         gate = ParentGate(this, onUnlocked = ::enterParentMode, onNeedPin = { mode = Mode.PIN })
 
         lock.configure()
@@ -119,21 +136,27 @@ class MainActivity : FragmentActivity() {
                     LocalSpeaker provides speaker,
                     LocalColourBlind provides prefs.colourBlindMode.also { settingsVersion },
                 ) {
-                    when (mode) {
-                        Mode.SETUP -> PinSetupScreen(onPinChosen = { pin ->
-                            prefs.setPin(pin)
-                            enterChildMode()
-                        })
+                    FeedbackHost(
+                        enabled = prefs.showFeedback.also { settingsVersion },
+                        target = feedbackTarget(),
+                        onSave = ::saveFeedback,
+                    ) {
+                        when (mode) {
+                            Mode.SETUP -> PinSetupScreen(onPinChosen = { pin ->
+                                prefs.setPin(pin)
+                                enterChildMode()
+                            })
 
-                        Mode.CHILD -> ChildContent()
+                            Mode.CHILD -> ChildContent()
 
-                        Mode.PIN -> PinEntryScreen(
-                            checkPin = prefs::checkPin,
-                            onSuccess = ::enterParentMode,
-                            onCancel = ::enterChildMode,
-                        )
+                            Mode.PIN -> PinEntryScreen(
+                                checkPin = prefs::checkPin,
+                                onSuccess = ::enterParentMode,
+                                onCancel = ::enterChildMode,
+                            )
 
-                        Mode.PARENT -> ParentContent()
+                            Mode.PARENT -> ParentContent()
+                        }
                     }
                 }
             }
@@ -196,7 +219,7 @@ class MainActivity : FragmentActivity() {
         }
         ParentHome(
             isDeviceOwner = lock.isDeviceOwner,
-            isLocked = isLocked,
+            lockState = lockState,
             videos = videos,
             games = Catalog.forParent(ageBand()),
             settings = ParentSettings(
@@ -207,6 +230,15 @@ class MainActivity : FragmentActivity() {
                 disabledGames = prefs.disabledGames,
                 ageBand = ageBand(),
                 usedMinutesToday = usedSeconds / 60,
+                showFeedback = prefs.showFeedback,
+                feedbackRepo = prefs.feedbackRepo,
+                feedbackBranch = prefs.feedbackBranch,
+            ),
+            feedback = FeedbackStatus(
+                pending = feedbackPending,
+                tokenSet = prefs.feedbackToken.isNotBlank(),
+                sending = feedbackSending,
+                message = feedbackMessage,
             ),
             actions = ParentActions(
                 onBackToChild = ::enterChildMode,
@@ -221,6 +253,16 @@ class MainActivity : FragmentActivity() {
                     settingsVersion++
                 },
                 onPauseLock = ::pauseLock,
+                onOpenPinningSettings = ::openPinningSettings,
+                onShowFeedback = { prefs.showFeedback = it; settingsVersion++ },
+                onFeedbackSettings = { repo, branch, token ->
+                    prefs.feedbackRepo = repo
+                    prefs.feedbackBranch = branch
+                    if (token != null) prefs.feedbackToken = token
+                    feedbackMessage = "GitHub settings saved"
+                    settingsVersion++
+                },
+                onSendFeedback = ::sendFeedback,
                 onReleaseDeviceOwner = ::releaseDeviceOwner,
             ),
             lastInteraction = { lastInteraction },
@@ -228,6 +270,67 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun ageBand(): Int = SessionMath.ageBand(prefs.birthMonth)
+
+    // --- Feedback ---
+
+    /** Which heading in feedback.md the current screen belongs to. */
+    private fun feedbackTarget(): FeedbackTarget = when (mode) {
+        Mode.SETUP -> FeedbackTarget("PIN setup")
+        Mode.PIN -> FeedbackTarget("PIN entry")
+        Mode.PARENT -> if (addingVideo) FeedbackTarget("Add a video and check") else FeedbackTarget("Parent mode")
+        Mode.CHILD -> when (val screen = child) {
+            ChildScreen.Home -> FeedbackTarget("Child home")
+            is ChildScreen.Watch -> FeedbackTarget("Video player")
+            ChildScreen.Games -> FeedbackTarget("Games menu")
+            is ChildScreen.Game -> Catalog.byId(screen.id)
+                ?.let { FeedbackTarget("Age ${it.age}", it.title) }
+                ?: FeedbackTarget("Games menu")
+            ChildScreen.Ended -> FeedbackTarget("60-minute dimming and end screen")
+        }
+    }
+
+    private fun saveFeedback(target: FeedbackTarget, text: String) {
+        feedbackStore.add(target, text)
+        feedbackPending = feedbackStore.list().count { !it.sent }
+        if (prefs.feedbackToken.isBlank()) {
+            Toast.makeText(this, "Saved. Add a GitHub token in Parent mode to send it.", Toast.LENGTH_LONG).show()
+        } else {
+            sendFeedback()
+        }
+    }
+
+    /** Sends every unsent note to feedback.md in one commit. Notes stay on the phone if it fails. */
+    private fun sendFeedback() {
+        if (feedbackSending) return
+        val notes = feedbackStore.list().filter { !it.sent }
+        if (notes.isEmpty()) return
+        val token = prefs.feedbackToken
+        if (token.isBlank()) {
+            feedbackMessage = "Add a GitHub token first"
+            return
+        }
+        feedbackSending = true
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    GitHubFeedback(Net.client).send(prefs.feedbackRepo, prefs.feedbackBranch, token, notes, appVersion())
+                }
+            }
+            result.onSuccess {
+                feedbackStore.markSent(notes.map { it.id }.toSet())
+                feedbackMessage = "Sent ${notes.size} to feedback.md"
+                Toast.makeText(this@MainActivity, "Feedback sent", Toast.LENGTH_SHORT).show()
+            }.onFailure {
+                feedbackMessage = "Not sent: ${it.message}"
+                Toast.makeText(this@MainActivity, "Feedback saved; sending failed", Toast.LENGTH_SHORT).show()
+            }
+            feedbackPending = feedbackStore.list().count { !it.sent }
+            feedbackSending = false
+        }
+    }
+
+    private fun appVersion(): String =
+        runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: "?"
 
     private fun tick() {
         if (mode != Mode.CHILD) return
@@ -276,7 +379,7 @@ class MainActivity : FragmentActivity() {
             appliedLevel = -1f
             applyCalm(SessionMath.calmLevel(usedSeconds))
         }
-        isLocked = lock.isLocked()
+        lockState = lock.state()
     }
 
     override fun onDestroy() {
@@ -311,31 +414,48 @@ class MainActivity : FragmentActivity() {
         appliedLevel = -1f
         applyCalm(SessionMath.calmLevel(usedSeconds))
         startLockIfPossible()
-        isLocked = lock.isLocked()
+        lockState = lock.state()
     }
 
     private fun enterParentMode() {
         lastInteraction = SystemClock.uptimeMillis()
-        isLocked = lock.isLocked()
+        lockState = lock.state()
+        if (feedbackPending > 0 && prefs.feedbackToken.isNotBlank()) sendFeedback()
         appliedLevel = -1f
         applyCalm(0f)
         mode = Mode.PARENT
     }
 
+    /**
+     * Device owner: full lock. Any other phone: Android App pinning, which asks to confirm.
+     * Re-applied whenever Child mode shows, at most every 10 s so a declined prompt does not loop.
+     */
     private fun startLockIfPossible() {
-        if (lock.isDeviceOwner && !lock.isLocked()) startLockTask()
+        if (lock.isLocked()) return
+        val now = SystemClock.uptimeMillis()
+        if (!lock.isDeviceOwner && lastLockAttempt != 0L && now - lastLockAttempt < 10_000) return
+        lastLockAttempt = now
+        runCatching { startLockTask() }
+    }
+
+    /** Opens Android settings so the parent can turn on App pinning. */
+    private fun openPinningSettings() {
+        if (lock.isLocked()) runCatching { stopLockTask() }
+        lockState = lock.state()
+        runCatching { startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS)) }
+            .onFailure { runCatching { startActivity(Intent(Settings.ACTION_SETTINGS)) } }
     }
 
     private fun pauseLock() {
-        if (lock.isLocked()) stopLockTask()
-        isLocked = false
+        if (lock.isLocked()) runCatching { stopLockTask() }
+        lockState = lock.state()
         Toast.makeText(this, "Lock paused until Child mode", Toast.LENGTH_SHORT).show()
     }
 
     private fun releaseDeviceOwner() {
         if (lock.isLocked()) stopLockTask()
         lock.releaseDeviceOwner()
-        isLocked = false
+        lockState = lock.state()
         Toast.makeText(this, "Device owner removed. You can uninstall now.", Toast.LENGTH_LONG).show()
     }
 }

@@ -2,7 +2,7 @@
 
 A calm, locked-down player for children aged 3 to 5 on Android. Parent-approved videos (always streamed, never downloaded) and 30 simple in-app games matched to the child's age, with no ads, no autoplay, no feed, no scores, and a 60-minute day that calms down and ends on its own.
 
-> Status: **0.2.0**: streaming player, add-video stream check, 60-minute session, 30 games. Not yet tested on a device. See the [spec](docs/SPEC.md).
+> Status: **0.3.0**: streaming player, add-video stream check, 60-minute session, 30 games, App pinning, in-app feedback to `feedback.md`. Not yet tested on a device. See the [spec](docs/SPEC.md).
 
 ## Why
 
@@ -26,7 +26,8 @@ Parent mode returns to Child mode after 2 minutes without a touch.
 
 ## Features
 
-- Runs as **device owner** in **Lock Task Mode**: no home, recents, notifications or other apps.
+- Locks with Android **App pinning** on any phone, or as **device owner** in **Lock Task Mode** on a spare phone (no home, recents, notifications or other apps, survives restarts).
+- A small **Feedback** button on every screen sends notes to [feedback.md](feedback.md), filed under that screen (switch it off in Parent mode).
 - **Parent gate**: volume x5 + BiometricPrompt; salted PBKDF2 PIN fallback.
 - **Videos**: parent pastes a YouTube link; the app streams the lowest quality once to check pace, flashes, colour and loudness, and checks SponsorBlock, YouTube flags and keywords for dark patterns. Approved videos always stream.
 - **60 minutes a day**: from minute 15, colour, brightness, volume and choices ease down; at 60 the lantern sleeps until tomorrow.
@@ -35,9 +36,9 @@ Parent mode returns to Child mode after 2 minutes without a touch.
 
 ## Setup
 
-You need a **spare Android device (Android 9+) with no Google account added**. Device owner cannot be set on a phone that already has accounts. Steps: [docs/SETUP.md](docs/SETUP.md).
+Any Android 9+ phone works with App pinning. For the full lock, use a spare phone with no Google account and set device owner. Steps: [docs/SETUP.md](docs/SETUP.md).
 
-The debug APK is built by GitHub Actions on every push: open the latest **Android CI** run and download `little-lantern-debug-apk`.
+**Download the app:** https://github.com/ajitzonebot/little-lantern/releases/download/latest/little-lantern.apk (rebuilt on every push; newer builds install over older ones).
 
 ## Building locally
 
@@ -51,4 +52,4 @@ Requires JDK 17 and the Android SDK (or Android Studio).
 
 GPL-3.0. The app uses [NewPipeExtractor](https://github.com/teamnewpipe/newpipeextractor) (GPL-3.0) to fetch ad-free video streams, so the whole app is GPL-3.0.
 
-Downloading YouTube videos may conflict with YouTube's Terms of Service. This project is intended for personal, private family use.
+Playing YouTube videos through a third-party extractor may conflict with YouTube's Terms of Service. This project is intended for personal, private family use.

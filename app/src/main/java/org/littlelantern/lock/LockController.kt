@@ -8,9 +8,21 @@ import android.content.Intent
 import android.content.IntentFilter
 import org.littlelantern.MainActivity
 
+enum class LockState {
+    /** The child can swipe out. */
+    NONE,
+
+    /** Android App pinning: gestures blocked; leaving needs the phone's PIN if that setting is on. Ends on restart. */
+    PINNED,
+
+    /** Device owner lock task: blocks everything and survives restarts. */
+    FULL,
+}
+
 /**
- * Wraps the device-owner APIs that keep the child inside Little Lantern.
- * Every call is a no-op when the app is not device owner, so the app still runs (unlocked) for development.
+ * Keeps the child inside Little Lantern.
+ * Any phone: Android App pinning (startLockTask without device owner; the phone asks to confirm).
+ * Spare phone set up as device owner: full lock task mode, no confirmation.
  */
 class LockController(private val context: Context) {
 
@@ -35,10 +47,16 @@ class LockController(private val context: Context) {
         dpm.addPersistentPreferredActivity(admin, home, ComponentName(context, MainActivity::class.java))
     }
 
-    fun isLocked(): Boolean {
+    fun state(): LockState {
         val am = context.getSystemService(ActivityManager::class.java)
-        return am.lockTaskModeState != ActivityManager.LOCK_TASK_MODE_NONE
+        return when (am.lockTaskModeState) {
+            ActivityManager.LOCK_TASK_MODE_LOCKED -> LockState.FULL
+            ActivityManager.LOCK_TASK_MODE_PINNED -> LockState.PINNED
+            else -> LockState.NONE
+        }
     }
+
+    fun isLocked(): Boolean = state() != LockState.NONE
 
     /** Undoes everything so the app can be uninstalled. Parent mode only. */
     fun releaseDeviceOwner() {
